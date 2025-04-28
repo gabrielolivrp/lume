@@ -1,0 +1,75 @@
+cabal-version:      3.0
+name:               lume
+version:            0.1.0.0
+license:            MIT
+license-file:       LICENSE
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+
+common warnings
+  ghc-options: -Wall
+
+library
+  import: warnings
+  exposed-modules:
+      Lume.Core.Tx
+    , Lume.Core.Idx
+    , Lume.Core.UTXO
+    , Lume.Core.Block
+    , Lume.Core.Nonce
+    , Lume.Core.State
+    , Lume.Core.Amount
+    , Lume.Core.Version
+    , Lume.Core.Timestamp
+    , Lume.Crypto.Hash
+    , Lume.Crypto.Address
+    , Lume.Crypto.Signature
+    , Lume.Crypto.MerkleTree
+  other-modules:
+  hs-source-dirs: src
+  build-depends:
+      base ^>=4.17.2.1
+    , bytestring
+    , text
+    , containers
+    , lens
+    , binary
+    , crypton
+    , memory
+    , network-transport
+    , network-transport-tcp
+    , distributed-process
+    , bech32
+    , time
+  default-language: Haskell2010
+
+executable lume
+  import: warnings
+  main-is: Main.hs
+  other-modules:
+  hs-source-dirs: app
+  build-depends:
+      base
+    , lume
+  default-language: Haskell2010
+
+test-suite lume-test
+  import: warnings
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  other-modules:
+      Lume.Crypto.HashTest
+    , Lume.Crypto.AddressTest
+    , Lume.Crypto.SignatureTest
+    , Lume.Crypto.MerkleTreeTest
+  build-depends:
+      base
+    , lume
+    , tasty
+    , tasty-hunit
+    , text
+    , vector
+    , bytestring
+    , binary
