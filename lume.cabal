@@ -12,19 +12,21 @@ common warnings
 library
   import: warnings
   exposed-modules:
-      Lume.Core.Tx
-    , Lume.Core.Idx
-    , Lume.Core.UTXO
-    , Lume.Core.Block
-    , Lume.Core.Nonce
-    , Lume.Core.State
-    , Lume.Core.Amount
-    , Lume.Core.Version
-    , Lume.Core.Timestamp
+      Lume.Types
+    , Lume.Block.Types
+    , Lume.Block.Builder
+    , Lume.Block.Validate
+    , Lume.Transaction.Validate
+    , Lume.Transaction.Builder
+    , Lume.Transaction.Types
+    , Lume.Transaction.Amount
+    , Lume.Consensus.PoW
+    , Lume.Consensus.Difficulty
     , Lume.Crypto.Hash
     , Lume.Crypto.Address
     , Lume.Crypto.Signature
     , Lume.Crypto.MerkleTree
+    , Lume.Time.Timestamp
   other-modules:
   hs-source-dirs: src
   build-depends:
@@ -64,6 +66,7 @@ test-suite lume-test
     , Lume.Crypto.AddressTest
     , Lume.Crypto.SignatureTest
     , Lume.Crypto.MerkleTreeTest
+    , Lume.Consensus.DifficultyTest
   build-depends:
       base
     , lume

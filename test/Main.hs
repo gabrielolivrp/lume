@@ -1,5 +1,6 @@
 import Test.Tasty (TestTree, defaultMain, testGroup)
 
+import Lume.Consensus.DifficultyTest (difficultyTests)
 import Lume.Crypto.AddressTest (addressTests)
 import Lume.Crypto.HashTest (hashTests)
 import Lume.Crypto.MerkleTreeTest (merkleTreeTests)
@@ -15,8 +16,20 @@ cryptoTests =
     , merkleTreeTests
     ]
 
+consensusTests :: TestTree
+consensusTests =
+  testGroup
+    "Consensus Tests"
+    [ difficultyTests
+    ]
+
 tests :: TestTree
-tests = testGroup "Lume" [cryptoTests]
+tests =
+  testGroup
+    "Lume"
+    [ cryptoTests
+    , consensusTests
+    ]
 
 main :: IO ()
 main = defaultMain tests

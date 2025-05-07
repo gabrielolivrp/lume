@@ -1,3 +1,3 @@
 # Lume Blockchain
 
-Lume is a modern Proof of Work (PoW) blockchain.
+Lume is a Proof of Work (PoW) blockchain.

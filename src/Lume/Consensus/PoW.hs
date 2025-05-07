@@ -3,13 +3,13 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Lume.Core.Version where
+module Lume.Consensus.PoW where
 
 import Data.Binary (Binary)
-import Data.Word (Word64)
+import Data.Word (Word32)
 import GHC.Generics (Generic)
 
-newtype Version = Version Word64
+newtype Nonce = Nonce Word32
   deriving stock (Show, Eq, Ord, Generic)
   deriving newtype (Num)
   deriving anyclass (Binary)

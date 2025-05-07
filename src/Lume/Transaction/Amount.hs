@@ -3,7 +3,10 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Lume.Core.Amount where
+module Lume.Transaction.Amount (
+  Amount (..),
+  safeSubtract,
+) where
 
 import Data.Binary (Binary)
 import GHC.Generics (Generic)
