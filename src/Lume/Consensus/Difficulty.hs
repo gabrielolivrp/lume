@@ -26,7 +26,7 @@ initialBits = Bits 0x1d00ffff
 {-# INLINE initialBits #-}
 
 maximumTarget :: Target
-maximumTarget = 0x00000000FFFF0000000000000000000000000000000000000000000000000000
+maximumTarget = Target 0x00000000FFFF0000000000000000000000000000000000000000000000000000
 {-# INLINE maximumTarget #-}
 
 toTarget :: Bits -> Target

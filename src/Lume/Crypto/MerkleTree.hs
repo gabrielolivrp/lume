@@ -43,13 +43,10 @@ generateProof mtree targetHash =
   findPath (MerkleNode _ left right) =
     case findPath left of
       Just path ->
-        Just (ProofElem (getMerkleHash left) (getMerkleHash right) L : path)
-      Nothing ->
-        case findPath right of
-          Just path ->
-            Just (ProofElem (getMerkleHash right) (getMerkleHash left) R : path)
-          Nothing ->
-            Nothing
+        pure (ProofElem (getMerkleHash left) (getMerkleHash right) L : path)
+      Nothing -> do
+        path <- findPath right
+        pure (ProofElem (getMerkleHash right) (getMerkleHash left) R : path)
 
 verifyProof :: MerkleProof -> Hash -> Hash -> Bool
 verifyProof (MerkleProof proofElems) treeRoot = go proofElems

@@ -100,9 +100,9 @@ fromRawBytes pk
 {-# INLINE fromRawBytes #-}
 
 emptySignature :: Signature
-emptySignature = Signature BS.empty
-{-# INLINE emptySignature #-}
+emptySignature = Signature (BS.replicate Ed25519.signatureSize 0)
+{-# NOINLINE emptySignature #-}
 
 emptyPublicKey :: PublicKey
-emptyPublicKey = PublicKey BS.empty
-{-# INLINE emptyPublicKey #-}
+emptyPublicKey = PublicKey (BS.replicate Ed25519.publicKeySize 0)
+{-# NOINLINE emptyPublicKey #-}

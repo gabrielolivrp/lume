@@ -12,11 +12,8 @@ common warnings
 library
   import: warnings
   exposed-modules:
-      Lume.Types
     , Lume.Block.Types
     , Lume.Block.Builder
-    , Lume.Block.Validate
-    , Lume.Transaction.Validate
     , Lume.Transaction.Builder
     , Lume.Transaction.Types
     , Lume.Transaction.Amount
@@ -26,6 +23,7 @@ library
     , Lume.Crypto.Address
     , Lume.Crypto.Signature
     , Lume.Crypto.MerkleTree
+    , Lume.Wallet.Tx
     , Lume.Time.Timestamp
   other-modules:
   hs-source-dirs: src

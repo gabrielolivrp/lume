@@ -9,9 +9,9 @@ module Lume.Crypto.Hash where
 
 import Crypto.Hash (Digest, SHA256, digestFromByteString, hash)
 import Data.Binary (Binary (get, put), Get, encode)
+import Data.Bits (Bits (shiftL, (.|.)))
 import Data.ByteArray (convert)
 import Data.ByteArray.Encoding qualified as BAE
-import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import GHC.Generics (Generic)
 
@@ -26,9 +26,9 @@ newtype Hash = Hash (Digest SHA256)
   deriving newtype (Show)
 
 instance Binary Hash where
-  put (Hash digest) = put (convert digest :: ByteString)
+  put (Hash digest) = put (convert digest :: BS.ByteString)
   get = do
-    bs <- get :: Get ByteString
+    bs <- get :: Get BS.ByteString
     case digestFromByteString bs of
       Just d -> return (Hash d)
       Nothing -> fail "Invalid SHA256 digest"
@@ -38,7 +38,7 @@ instance ToHash Hash where
 
 instance ToHash BS.ByteString
 
-hash' :: ByteString -> Hash
+hash' :: BS.ByteString -> Hash
 hash' = Hash . hash
 {-# INLINE hash' #-}
 
@@ -53,3 +53,8 @@ toRawBytes (Hash digest) = convert digest
 fromRawBytes :: BS.ByteString -> Maybe Hash
 fromRawBytes bs = Hash <$> digestFromByteString bs
 {-# INLINE fromRawBytes #-}
+
+hash2Integer :: Hash -> Integer
+hash2Integer (Hash digest) = BS.foldl' step 0 (convert digest)
+ where
+  step acc byte = acc `shiftL` 8 .|. fromIntegral byte

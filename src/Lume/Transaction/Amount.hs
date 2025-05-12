@@ -6,6 +6,7 @@
 module Lume.Transaction.Amount (
   Amount (..),
   safeSubtract,
+  maxAmount,
 ) where
 
 import Data.Binary (Binary)
@@ -16,6 +17,10 @@ newtype Amount = Amount Natural
   deriving stock (Show, Eq, Ord, Generic)
   deriving newtype (Num, Enum, Real, Integral)
   deriving anyclass (Binary)
+
+maxAmount :: Amount
+maxAmount = Amount 2100000000000000
+{-# INLINE maxAmount #-}
 
 safeSubtract :: Amount -> Amount -> Maybe Amount
 safeSubtract (Amount a) (Amount b)
