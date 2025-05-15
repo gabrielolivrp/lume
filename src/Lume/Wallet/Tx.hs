@@ -4,65 +4,67 @@ module Lume.Wallet.Tx where
 
 import Control.Lens
 import Control.Monad
+import Data.List (sortOn)
 import qualified Data.Map as M
 import Lume.Crypto.Address (Address)
-import Lume.Transaction.Amount (Amount, safeSubtract)
+import Lume.Transaction.Amount (Amount)
 import Lume.Transaction.Builder (buildTx)
-import Lume.Transaction.Types (Outpoint (Outpoint), Tx, UTXO, UtxoSet (UtxoSet), utxoId, utxoIdx, utxoOwner, utxoValue)
+import Lume.Transaction.Types
 
 newtype WalletException = WalletException String
-  deriving (Show)
+  deriving stock (Show)
 
-buildUnsignedTx ::
-  UtxoSet ->
-  Address ->
-  Address ->
-  Amount ->
-  Either WalletException Tx
-buildUnsignedTx utxoSet addr to' amount = do
-  let utxosAvailable = unspentTransactions addr utxoSet
-  when (null utxosAvailable) $ Left (WalletException "No unspent transactions available")
+data BuildUnsignedTxParams = BuildUnsignedTxParams
+  { _sender :: Address
+  , _recipient :: Address
+  , _value :: Amount
+  , _fee :: Amount
+  }
 
-  let (utxoSelecteds, utxoAmount) = selectUTXOs addr amount utxosAvailable
-  when (null utxoSelecteds) $ Left (WalletException "No UTXOs selected")
-  when (utxoAmount < amount) $ Left (WalletException "Insufficient funds")
+buildUnsignedTx :: UtxoSet -> BuildUnsignedTxParams -> Either WalletException Tx
+buildUnsignedTx utxoSet (BuildUnsignedTxParams sender recipient value fee) = do
+  when (value <= 0) $ Left (WalletException "Transaction value must be > 0")
+  when (fee < 0) $ Left (WalletException "Transaction fee cannot be negative")
 
-  let outpoints = toOutpoints utxoSelecteds
-  outs <- toOuts addr to' amount utxoAmount
+  let utxos = unspentTransactions sender utxoSet
+  when (null utxos) $ Left (WalletException "No unspent UTXOs available")
 
-  case buildTx outpoints outs of
-    Left err -> Left $ WalletException ("Failed to build transaction: " ++ show err)
-    Right tx' -> Right tx'
+  let targetTotal = value + fee
+  case coinSelection utxos targetTotal of
+    Just (chosens, sumChosen) -> do
+      let outpoints = makeOutpoint chosens
+          outputs = makeOutputs sender recipient value fee sumChosen
+      case buildTx outpoints outputs of
+        Left err -> Left $ WalletException $ "Failed to build transaction: " ++ show err
+        Right tx -> Right tx
+    Nothing -> Left (WalletException "Insufficient funds")
  where
-  toOuts fromAddr toAddr txAmount utxoAmount
-    | fromAddr == toAddr = Right [(fromAddr, txAmount)]
-    | utxoAmount > txAmount =
-        case safeSubtract utxoAmount txAmount of
-          Just remainingAmount -> Right [(fromAddr, remainingAmount), (toAddr, txAmount)]
-          Nothing ->
-            Left (WalletException "Insufficient funds after subtracting transaction amount")
-    | otherwise = Right [(toAddr, txAmount)]
+  makeOutpoint :: [UTXO] -> [Outpoint]
+  makeOutpoint = map (\utxo -> Outpoint (utxo ^. utxoId) (utxo ^. utxoIdx))
 
-  toOutpoints = map (\utxo -> Outpoint (utxo ^. utxoId) (utxo ^. utxoIdx))
+  makeOutputs :: Address -> Address -> Amount -> Amount -> Amount -> [(Address, Amount)]
+  makeOutputs sender' recipient' value' fee' sumChosen
+    | sender' == recipient' = [(recipient', sumChosen - fee')]
+    | otherwise =
+        let change = sumChosen - value' - fee'
+         in if change > 0
+              then [(recipient', value'), (sender', change)]
+              else [(recipient', value')]
 
-selectUTXOs :: Address -> Amount -> [UTXO] -> ([UTXO], Amount)
-selectUTXOs addr amount =
-  foldl
-    ( \acc@(utxos, amt) utxo ->
-        let
-          isOwned = addr == (utxo ^. utxoOwner)
-          isValid = (utxo ^. utxoValue) <= amount
-         in
-          if isOwned && isValid
-            then (utxos ++ [utxo], amt + (utxo ^. utxoValue))
-            else acc
-    )
-    ([], 0)
+-- | smallest-first coin selection algorithm
+coinSelection :: [UTXO] -> Amount -> Maybe ([UTXO], Amount)
+coinSelection utxos target = go (sortOn (^. utxoValue) utxos) 0 []
+ where
+  go [] total acc
+    | total >= target = Just (reverse acc, total)
+    | otherwise = Nothing
+  go (u : us) total acc
+    | total >= target = Just (reverse acc, total)
+    | otherwise = go us (total + u ^. utxoValue) (u : acc)
 
 unspentTransactions :: Address -> UtxoSet -> [UTXO]
-unspentTransactions addr (UtxoSet utxoSet) =
-  let
-    utxoList = M.toList utxoSet
-    spendable = filter (\(_, utxo) -> utxo ^. utxoOwner == addr) utxoList
-   in
-    map snd spendable
+unspentTransactions addr (UtxoSet setMap) =
+  [ utxo
+  | utxo <- M.elems setMap
+  , utxo ^. utxoOwner == addr
+  ]
