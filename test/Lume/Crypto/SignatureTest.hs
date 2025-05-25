@@ -12,38 +12,38 @@ import Test.Tasty.HUnit (assertBool, testCase)
 signatureTests :: TestTree
 signatureTests =
   testGroup
-    "Signature Tests"
-    [ testCase "Sign and verify a message successfully" $ do
-        -- Generate a new key pair and sign a message using the private key.
+    "Crypto.Signature"
+    [ testCase "should sign and verify message successfully" $ do
         (Sig.KeyPair (pubKey, privKey)) <- Sig.generateKeyPair
         let message = BS.pack "The quick brown fox jumps over the lazy dog"
-            sig = Sig.sign privKey message
-        -- Verify that the signature is valid for the given message and public key.
-        assertBool "Valid signature should verify" (Sig.verify pubKey message sig)
-    , testCase "Verification fails for altered message" $ do
-        -- Ensure that if the message is modified, the signature verification fails.
+            signature = Sig.sign privKey message
+        assertBool "valid signature should verify" $
+          Sig.verify pubKey message signature
+    , testCase "should fail verification for altered message" $ do
         (Sig.KeyPair (pubKey, privKey)) <- Sig.generateKeyPair
         let originalMessage = BS.pack "foo!"
             alteredMessage = BS.pack "foo?"
-            sig = Sig.sign privKey originalMessage
-        assertBool "Signature should fail for altered message" (not $ Sig.verify pubKey alteredMessage sig)
-    , testCase "Verification fails with a different public key" $ do
-        -- Sign a message with one key pair and attempt verification with a different public key.
+            signature = Sig.sign privKey originalMessage
+        assertBool "signature should fail for altered message" $
+          not $
+            Sig.verify pubKey alteredMessage signature
+    , testCase "should fail verification with different public key" $ do
         (Sig.KeyPair (_, privKey1)) <- Sig.generateKeyPair
         (Sig.KeyPair (pubKey2, _)) <- Sig.generateKeyPair
         let message = BS.pack "Test message"
-            sig = Sig.sign privKey1 message
-        assertBool "Signature should fail with a different public key" (not $ Sig.verify pubKey2 message sig)
-    , testCase "Private to public key conversion returns correct public key" $ do
-        -- Verify that converting a private key to its corresponding public key is correct.
-        (Sig.KeyPair (pubKey, privKey)) <- Sig.generateKeyPair
-        assertBool "Private key to public key conversion should match" $
-          pubKey == Sig.toPublicKey privKey
-    , testCase "Binary serialization round-trip for KeyPair" $ do
-        -- Test that a key pair can be serialized and deserialized without loss.
+            signature = Sig.sign privKey1 message
+        assertBool "signature should fail with different public key" $
+          not $
+            Sig.verify pubKey2 message signature
+    , testCase "should convert private key to correct public key" $ do
+        (Sig.KeyPair (expectedPubKey, privKey)) <- Sig.generateKeyPair
+        let derivedPubKey = Sig.toPublicKey privKey
+        assertBool "derived public key should match original" $
+          expectedPubKey == derivedPubKey
+    , testCase "should preserve KeyPair through binary serialization" $ do
         originalKeyPair <- Sig.generateKeyPair
         let serialized = encode originalKeyPair
-            deserialized = decode serialized :: Sig.KeyPair
-        assertBool "KeyPair serialization should be reversible" $
-          originalKeyPair == deserialized
+            deserializedKeyPair = decode serialized :: Sig.KeyPair
+        assertBool "deserialized KeyPair should match original" $
+          originalKeyPair == deserializedKeyPair
     ]

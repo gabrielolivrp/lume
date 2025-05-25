@@ -11,58 +11,63 @@ import Lume.Crypto.Hash qualified as Hash
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (assertBool, assertEqual, assertFailure, testCase)
 
-data TestData = TestData String Int
+newtype Foo = Foo String
   deriving (Show, Eq, Generic)
 
-instance Binary TestData
-instance Hash.ToHash TestData
+instance Binary Foo
+instance Hash.ToHash Foo
 
 hashTests :: TestTree
 hashTests =
   testGroup
-    "Hash Tests"
-    [ testCase "Hash.hash' produces consistent values for the same input" $ do
-        let input = "foo" :: BS.ByteString
+    "Crypto.Hash"
+    [ testCase "should produce consistent hashes for same input" $ do
+        let input = "foo"
             hash1 = Hash.hash' input
             hash2 = Hash.hash' input
-        assertEqual "Hashes should be equal for the same input" hash1 hash2
-    , testCase "Different inputs produce different hashes" $ do
-        let input1 = "foo 1" :: BS.ByteString
-            input2 = "foo 2" :: BS.ByteString
+        assertEqual "identical input hash" hash1 hash2
+    , testCase "should produce different hashes for different inputs" $ do
+        let input1 = "foo 1"
+            input2 = "foo 2"
             hash1 = Hash.hash' input1
             hash2 = Hash.hash' input2
-        assertBool "Hashes should be different for different inputs" (hash1 /= hash2)
-    , testCase "toHex produces a valid hexadecimal representation" $ do
-        let input = "foo" :: BS.ByteString
+        assertBool "different inputs should produce different hashes" $
+          hash1 /= hash2
+    , testCase "should produce valid hexadecimal representation" $ do
+        let input = "foo"
             hash = Hash.hash' input
             hexString = Hash.toHex hash
-        assertEqual "Hex string should be 64 characters (32 bytes)" 64 (BS.length hexString)
-    , testCase "toRawBytes and fromRawBytes perform correct round-trip conversion" $ do
-        let input = "foo" :: BS.ByteString
-            hash = Hash.hash' input
-            rawBytes = Hash.toRawBytes hash
-            hashAgain = Hash.fromRawBytes rawBytes
-        case hashAgain of
-          Just h -> assertEqual "Hash should be the same after roundtrip conversion" hash h
-          Nothing -> assertFailure "fromRawBytes failed to parse the raw bytes"
-    , testCase "fromRawBytes returns Nothing for invalid bytes" $ do
-        let invalidBytes = BS.pack [1, 2, 3] -- Too short to be a valid SHA256 hash
+        assertEqual "hex string length" 64 (BS.length hexString)
+    , testCase "should preserve hash through raw bytes round-trip" $ do
+        let input = "foo"
+            originalHash = Hash.hash' input
+            rawBytes = Hash.toRawBytes originalHash
+            reconstructedHash = Hash.fromRawBytes rawBytes
+        case reconstructedHash of
+          Just h ->
+            assertEqual "round-trip hash" originalHash h
+          Nothing ->
+            assertFailure "fromRawBytes failed to parse valid raw bytes"
+    , testCase "should return Nothing for invalid raw bytes" $ do
+        let invalidBytes = BS.pack [1, 2, 3]
             result = Hash.fromRawBytes invalidBytes
         case result of
-          Just h -> assertFailure $ "Expected failure for invalid bytes, but got: " ++ show h
+          Just h ->
+            assertFailure $ "fromRawBytes should have failed for invalid bytes, got: " <> show h
           Nothing -> pure ()
-    , testCase "Default toHash implementation works for types with Binary instance" $ do
-        let testData1 = TestData "foo" 1
-            testData2 = TestData "foo" 1
-            testData3 = TestData "bar" 2
-            hash1 = Hash.toHash testData1
-            hash2 = Hash.toHash testData2
-            hash3 = Hash.toHash testData3
-        assertEqual "Hash should be the same for equal data" hash1 hash2
-        assertBool "Hash should be different for different data" (hash1 /= hash3)
-    , testCase "ToHash instance for Hash returns the hash itself" $ do
-        let input = "reflexive test" :: BS.ByteString
-            hash = Hash.hash' input
-            hashOfHash = Hash.toHash hash
-        assertEqual "toHash of a Hash should return the same Hash" hash hashOfHash
+    , testCase "should work with default Binary-based toHash implementation" $ do
+        let foo1 = Foo "a"
+            foo2 = Foo "a"
+            foo3 = Foo "c"
+            hash1 = Hash.toHash foo1
+            hash2 = Hash.toHash foo2
+            hash3 = Hash.toHash foo3
+        assertEqual "equal data hash" hash1 hash2
+        assertBool "different data should produce different hashes" $
+          hash1 /= hash3
+    , testCase "should return same hash when hashing a hash" $ do
+        let input = "reflexive test"
+            originalHash = Hash.hash' input
+            hashOfHash = Hash.toHash originalHash
+        assertEqual "hash reflexivity" originalHash hashOfHash
     ]

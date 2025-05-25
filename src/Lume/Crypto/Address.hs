@@ -56,3 +56,10 @@ toPublicKey addr = do
   case dataPartToBytes dp >>= fromRawBytes of
     Nothing -> Left InvalidAddress
     Just addrBytes -> Right addrBytes
+
+isValidAddress :: Address -> Bool
+isValidAddress addr =
+  case decodeAddress addr of
+    Left _ -> False
+    Right _ -> True
+{-# INLINE isValidAddress #-}

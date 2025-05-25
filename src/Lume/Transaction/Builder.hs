@@ -1,31 +1,37 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 
 module Lume.Transaction.Builder (
   buildTx,
   signTx,
   tVersion,
-  SignTxException (..),
-  BuildTxException (..),
+  SignTxError (..),
+  TxBuilderError (..),
   SigInput (..),
 )
 where
 
 import Control.Lens
-import Control.Lens.Internal.CTypes (Word32)
 import Control.Monad (when)
+import Control.Monad.Except (MonadError (throwError))
 import Data.ByteString qualified as BS
 import Data.List
+import Data.Word (Word32)
 import Lume.Crypto.Address (Address)
 import Lume.Crypto.Hash (Hash, ToHash (toHash), toRawBytes)
 import Lume.Crypto.Signature (PrivateKey, emptyPublicKey, emptySignature, sign, toPublicKey)
 import Lume.Transaction.Amount (Amount, maxAmount)
 import Lume.Transaction.Types
 
-newtype SignTxException = SignTxException String
-  deriving (Show)
+data SignTxError
+  = CoinbaseTxCannotBeSigned
+  | NoSignatureInputsProvided
+  | MissingSignatureInput
+  deriving (Show, Eq)
 
-newtype BuildTxException = BuildTxException String
-  deriving (Show)
+data TxBuilderError
+  = ValueExceedsMaxAmount
+  deriving (Show, Eq)
 
 data SigInput = SigInput
   { sigOutpoint :: Outpoint
@@ -35,30 +41,28 @@ data SigInput = SigInput
 tVersion :: Word32
 tVersion = 0
 
-buildTx ::
-  [Outpoint] ->
-  [(Address, Amount)] ->
-  Either BuildTxException Tx
+buildTx :: (MonadError TxBuilderError m) => [Outpoint] -> [(Address, Amount)] -> m Tx
 buildTx xs ys = do
   let txin = map (\x -> TxIn x emptySignature emptyPublicKey) xs
   txout <- mapM buildTxOut ys
   pure (Tx txin txout tVersion)
  where
-  buildTxOut (addr, amount) = do
-    when (amount >= maxAmount) (Left $ BuildTxException "Invalid amount")
-    pure (TxOut addr amount)
+  buildTxOut (addr, value) = do
+    when (value >= maxAmount) (throwError ValueExceedsMaxAmount)
+    pure (TxOut addr value)
 
-signTx :: Tx -> [SigInput] -> Either SignTxException Tx
+signTx :: (MonadError SignTxError m) => Tx -> [SigInput] -> m Tx
 signTx tx sigins = do
-  when (isCoinbase tx) (Left $ SignTxException "Coinbase transaction cannot be signed")
-  when (null sigins) (Left $ SignTxException "No signature inputs provided")
+  when (isCoinbase tx) (throwError CoinbaseTxCannotBeSigned)
+  when (null sigins) (throwError NoSignatureInputsProvided)
   let hash = toRawBytes . noSigTxHash $ tx
   txins' <- mapM (go hash) (tx ^. txIn)
   pure (tx & txIn .~ txins')
  where
-  go txHash txin = case findSigInput txin sigins of
-    Just siginput -> pure $ signTxIn txin txHash (sigPrivKey siginput)
-    Nothing -> Left $ SignTxException "Missing signature input"
+  go txHash txin =
+    case findSigInput txin sigins of
+      Just siginput -> pure $ signTxIn txin txHash (sigPrivKey siginput)
+      Nothing -> throwError MissingSignatureInput
 
   findSigInput txin = find (\siginput -> txin ^. txInPrevOut == sigOutpoint siginput)
 

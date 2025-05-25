@@ -17,28 +17,23 @@ import Lume.Crypto.Hash (Hash, ToHash)
 import Lume.Crypto.Signature (PublicKey, Signature)
 import Lume.Transaction.Amount (Amount)
 
-newtype Idx = Idx Word64
-  deriving stock (Show, Eq, Ord, Generic)
-  deriving newtype (Num)
-  deriving anyclass (Binary)
-
 data Outpoint = Outpoint
-  { _outpId :: Hash
+  { _outpId :: !Hash
   -- ^ Hash of the transaction
-  , _outpIdx :: Idx
+  , _outpIdx :: !Word64
   -- ^ Output index within the source transaction
   }
-  deriving stock (Show, Eq, Generic)
+  deriving stock (Show, Eq, Ord, Generic)
   deriving anyclass (Binary)
 
 makeLenses ''Outpoint
 
 data TxIn = TxIn
-  { _txInPrevOut :: Outpoint
+  { _txInPrevOut :: !Outpoint
   -- ^ Previous output of the transaction (UTXO)
-  , _txInSignature :: Signature
+  , _txInSignature :: !Signature
   -- ^ Signature of the transaction
-  , _txInPubKey :: PublicKey
+  , _txInPubKey :: !PublicKey
   -- ^ Public key of the transaction
   }
   deriving stock (Show, Eq, Generic)
@@ -47,9 +42,9 @@ data TxIn = TxIn
 makeLenses ''TxIn
 
 data TxOut = TxOut
-  { _txOutAddress :: Address
+  { _txOutAddress :: !Address
   -- ^ Address that will receive the funds
-  , _txOutValue :: Amount
+  , _txOutValue :: !Amount
   -- ^ Amount to be transferred
   }
   deriving stock (Show, Eq, Generic)
@@ -70,20 +65,20 @@ data Tx = Tx
 
 makeLenses ''Tx
 
-newtype Txs = Txs [Tx]
+newtype Txs = Txs {getTxs :: [Tx]}
   deriving stock (Show, Eq, Generic)
   deriving anyclass (Binary)
 
 makeLenses ''Txs
 
 data UTXO = UTXO
-  { _utxoId :: Hash
+  { _utxoId :: !Hash
   -- ^ Hash of the transaction
-  , _utxoIdx :: Idx
+  , _utxoIdx :: !Word64
   -- ^ Index of the output in the transaction
-  , _utxoOwner :: Address
+  , _utxoOwner :: !Address
   -- ^ Address that owns this unspent output
-  , _utxoValue :: Amount
+  , _utxoValue :: !Amount
   -- ^ Amount of money in the output
   }
   deriving stock (Show, Eq, Generic)

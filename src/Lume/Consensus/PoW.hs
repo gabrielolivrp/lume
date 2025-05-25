@@ -1,4 +1,5 @@
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Lume.Consensus.PoW (
   mineBlock,
@@ -6,9 +7,14 @@ module Lume.Consensus.PoW (
 ) where
 
 import Control.Lens
+import Control.Monad.Except (MonadError (throwError))
 import Lume.Block.Types (Block, BlockHeader, bHeader, bNonce)
 import Lume.Consensus.Difficulty (Target)
 import Lume.Crypto.Hash (ToHash (toHash), hash2Integer)
+
+data MineError
+  = NonceOverflow
+  deriving (Show)
 
 checkNonce :: BlockHeader -> Target -> Bool
 checkNonce header target =
@@ -16,17 +22,19 @@ checkNonce header target =
    in hash2Integer hash < toInteger target
 {-# INLINE checkNonce #-}
 
-mineBlock :: Block -> Target -> Block
+mineBlock :: (MonadError MineError m) => Block -> Target -> m Block
 mineBlock block = go (block ^. bHeader)
  where
-  go :: BlockHeader -> Target -> Block
-  go header target =
-    if checkNonce header target
-      then block & bHeader .~ header
-      else go (incrementNonce header) target
+  go header target
+    | checkNonce header target = pure $ block & bHeader .~ header
+    | otherwise = do
+        blockHeader <- incrementNonce header
+        go blockHeader target
 
-incrementNonce :: BlockHeader -> BlockHeader
-incrementNonce header =
-  let nonce = header ^. bNonce
-      newNonce = nonce + 1
-   in header & bNonce .~ newNonce
+incrementNonce :: (MonadError MineError m) => BlockHeader -> m BlockHeader
+incrementNonce header
+  | header ^. bNonce >= maxBound = throwError NonceOverflow
+  | otherwise =
+      let !nonce = header ^. bNonce
+          !newNonce = nonce + 1
+       in pure $ header & bNonce .~ newNonce

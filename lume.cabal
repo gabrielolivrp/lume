@@ -24,6 +24,8 @@ library
     , Lume.Crypto.Signature
     , Lume.Crypto.MerkleTree
     , Lume.Wallet.Tx
+    , Lume.Storage.Database
+    , Lume.Storage.FileStorage
     , Lume.Time.Timestamp
   other-modules:
   hs-source-dirs: src
@@ -41,6 +43,11 @@ library
     , distributed-process
     , bech32
     , time
+    , mtl
+    , transformers
+    , leveldb-haskell
+    , directory
+    , filepath
   default-language: Haskell2010
 
 executable lume
@@ -60,11 +67,18 @@ test-suite lume-test
   main-is: Main.hs
   hs-source-dirs: test
   other-modules:
-      Lume.Crypto.HashTest
+      Lume.Mocks
+    , Lume.Crypto.HashTest
     , Lume.Crypto.AddressTest
     , Lume.Crypto.SignatureTest
     , Lume.Crypto.MerkleTreeTest
     , Lume.Consensus.DifficultyTest
+    , Lume.Consensus.PoWTest
+    , Lume.Block.BuilderTest
+    , Lume.Transaction.BuilderTest
+    , Lume.Wallet.TxTest
+    , Lume.Storage.DatabaseTest
+    , Lume.Storage.FileStorageTest
   build-depends:
       base
     , lume
@@ -74,3 +88,11 @@ test-suite lume-test
     , vector
     , bytestring
     , binary
+    , lens
+    , containers
+    , mtl
+    , transformers
+    , temporary
+    , resourcet
+    , directory
+    , filepath

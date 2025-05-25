@@ -29,7 +29,7 @@ data BlockHeader = BlockHeader
   , _bBits :: !Bits
   -- ^ Compact target for the PoW problem
   }
-  deriving stock (Show, Generic)
+  deriving stock (Eq, Show, Generic)
   deriving anyclass (Binary, ToHash)
 
 makeLenses ''BlockHeader
@@ -42,7 +42,7 @@ data Block = Block
   , _bTxs :: !Txs
   -- ^ Transactions in the block
   }
-  deriving stock (Show, Generic)
+  deriving stock (Eq, Show, Generic)
   deriving anyclass (Binary, ToHash)
 
 makeLenses ''Block

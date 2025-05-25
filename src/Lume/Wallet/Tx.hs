@@ -1,18 +1,26 @@
-{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Lume.Wallet.Tx where
 
 import Control.Lens
 import Control.Monad
+import Control.Monad.Except (MonadError, throwError)
 import Data.List (sortOn)
 import qualified Data.Map as M
+import Data.Text (Text)
 import Lume.Crypto.Address (Address)
 import Lume.Transaction.Amount (Amount)
-import Lume.Transaction.Builder (buildTx)
+import Lume.Transaction.Builder (TxBuilderError, buildTx)
 import Lume.Transaction.Types
 
-newtype WalletException = WalletException String
-  deriving stock (Show)
+data WalletError
+  = InsufficientFunds
+  | NoUnspentOutputsAvailable
+  | InvalidTransactionValue Text
+  | InvalidTransactionFee Text
+  | TransactionBuildFailed TxBuilderError
+  deriving (Show, Eq)
 
 data BuildUnsignedTxParams = BuildUnsignedTxParams
   { _sender :: Address
@@ -21,23 +29,27 @@ data BuildUnsignedTxParams = BuildUnsignedTxParams
   , _fee :: Amount
   }
 
-buildUnsignedTx :: UtxoSet -> BuildUnsignedTxParams -> Either WalletException Tx
+buildUnsignedTx ::
+  (MonadError WalletError m) =>
+  UtxoSet ->
+  BuildUnsignedTxParams ->
+  m Tx
 buildUnsignedTx utxoSet (BuildUnsignedTxParams sender recipient value fee) = do
-  when (value <= 0) $ Left (WalletException "Transaction value must be > 0")
-  when (fee < 0) $ Left (WalletException "Transaction fee cannot be negative")
+  when (value == 0) $ throwError (InvalidTransactionValue "Value must be greater than 0")
+  when (fee == 0) $ throwError (InvalidTransactionFee "Fee must be greater than 0")
 
   let utxos = unspentTransactions sender utxoSet
-  when (null utxos) $ Left (WalletException "No unspent UTXOs available")
+  when (null utxos) $ throwError NoUnspentOutputsAvailable
 
-  let targetTotal = value + fee
-  case coinSelection utxos targetTotal of
+  let txTotal = value + fee
+  case coinSelection utxos txTotal of
     Just (chosens, sumChosen) -> do
       let outpoints = makeOutpoint chosens
           outputs = makeOutputs sender recipient value fee sumChosen
       case buildTx outpoints outputs of
-        Left err -> Left $ WalletException $ "Failed to build transaction: " ++ show err
-        Right tx -> Right tx
-    Nothing -> Left (WalletException "Insufficient funds")
+        Left err -> throwError $ TransactionBuildFailed err
+        Right tx -> pure tx
+    Nothing -> throwError InsufficientFunds
  where
   makeOutpoint :: [UTXO] -> [Outpoint]
   makeOutpoint = map (\utxo -> Outpoint (utxo ^. utxoId) (utxo ^. utxoIdx))
