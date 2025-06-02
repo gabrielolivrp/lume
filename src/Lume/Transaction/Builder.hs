@@ -15,7 +15,9 @@ import Control.Lens
 import Control.Monad (when)
 import Control.Monad.Except (MonadError (throwError))
 import Data.ByteString qualified as BS
-import Data.List
+
+import Data.Foldable (find, toList)
+import Data.List.NonEmpty qualified as NE
 import Data.Word (Word32)
 import Lume.Crypto.Address (Address)
 import Lume.Crypto.Hash (Hash, ToHash (toHash), toRawBytes)
@@ -25,12 +27,12 @@ import Lume.Transaction.Types
 
 data SignTxError
   = CoinbaseTxCannotBeSigned
-  | NoSignatureInputsProvided
-  | MissingSignatureInput
+  | MissingSignatureInput TxIn
   deriving (Show, Eq)
 
 data TxBuilderError
   = ValueExceedsMaxAmount
+  | TxInC
   deriving (Show, Eq)
 
 data SigInput = SigInput
@@ -41,20 +43,23 @@ data SigInput = SigInput
 tVersion :: Word32
 tVersion = 0
 
-buildTx :: (MonadError TxBuilderError m) => [Outpoint] -> [(Address, Amount)] -> m Tx
+buildTx ::
+  (MonadError TxBuilderError m) =>
+  NE.NonEmpty Outpoint ->
+  NE.NonEmpty (Address, Amount) ->
+  m Tx
 buildTx xs ys = do
-  let txin = map (\x -> TxIn x emptySignature emptyPublicKey) xs
+  let txin = NE.map (\x -> TxIn x emptySignature emptyPublicKey) xs
   txout <- mapM buildTxOut ys
-  pure (Tx txin txout tVersion)
+  pure (Tx (toList txin) (toList txout) tVersion)
  where
   buildTxOut (addr, value) = do
     when (value >= maxAmount) (throwError ValueExceedsMaxAmount)
     pure (TxOut addr value)
 
-signTx :: (MonadError SignTxError m) => Tx -> [SigInput] -> m Tx
+signTx :: (MonadError SignTxError m) => Tx -> NE.NonEmpty SigInput -> m Tx
 signTx tx sigins = do
   when (isCoinbase tx) (throwError CoinbaseTxCannotBeSigned)
-  when (null sigins) (throwError NoSignatureInputsProvided)
   let hash = toRawBytes . noSigTxHash $ tx
   txins' <- mapM (go hash) (tx ^. txIn)
   pure (tx & txIn .~ txins')
@@ -62,7 +67,7 @@ signTx tx sigins = do
   go txHash txin =
     case findSigInput txin sigins of
       Just siginput -> pure $ signTxIn txin txHash (sigPrivKey siginput)
-      Nothing -> throwError MissingSignatureInput
+      Nothing -> throwError (MissingSignatureInput txin)
 
   findSigInput txin = find (\siginput -> txin ^. txInPrevOut == sigOutpoint siginput)
 

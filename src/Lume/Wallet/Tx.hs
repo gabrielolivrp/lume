@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Lume.Wallet.Tx where
@@ -7,7 +8,8 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Except (MonadError, throwError)
 import Data.List (sortOn)
-import qualified Data.Map as M
+import Data.List.NonEmpty qualified as NE
+import Data.Map qualified as M
 import Data.Text (Text)
 import Lume.Crypto.Address (Address)
 import Lume.Transaction.Amount (Amount)
@@ -43,35 +45,35 @@ buildUnsignedTx utxoSet (BuildUnsignedTxParams sender recipient value fee) = do
 
   let txTotal = value + fee
   case coinSelection utxos txTotal of
-    Just (chosens, sumChosen) -> do
-      let outpoints = makeOutpoint chosens
-          outputs = makeOutputs sender recipient value fee sumChosen
+    Just (chosens, sumChosens) -> do
+      let outpoints = makeOutpoints chosens
+          outputs = makeOutputs sender recipient value fee sumChosens
       case buildTx outpoints outputs of
         Left err -> throwError $ TransactionBuildFailed err
         Right tx -> pure tx
     Nothing -> throwError InsufficientFunds
  where
-  makeOutpoint :: [UTXO] -> [Outpoint]
-  makeOutpoint = map (\utxo -> Outpoint (utxo ^. utxoId) (utxo ^. utxoIdx))
+  makeOutpoints :: NE.NonEmpty UTXO -> NE.NonEmpty Outpoint
+  makeOutpoints = NE.map (\utxo -> Outpoint (utxo ^. utxoId) (utxo ^. utxoIdx))
 
-  makeOutputs :: Address -> Address -> Amount -> Amount -> Amount -> [(Address, Amount)]
-  makeOutputs sender' recipient' value' fee' sumChosen
-    | sender' == recipient' = [(recipient', sumChosen - fee')]
+  makeOutputs :: Address -> Address -> Amount -> Amount -> Amount -> NE.NonEmpty (Address, Amount)
+  makeOutputs sender' recipient' value' fee' sumChosens
+    | sender' == recipient' = NE.singleton (recipient', sumChosens - fee')
     | otherwise =
-        let change = sumChosen - value' - fee'
+        let change = sumChosens - value' - fee'
          in if change > 0
-              then [(recipient', value'), (sender', change)]
-              else [(recipient', value')]
+              then NE.fromList [(recipient', value'), (sender', change)]
+              else NE.singleton (recipient', value')
 
 -- | smallest-first coin selection algorithm
-coinSelection :: [UTXO] -> Amount -> Maybe ([UTXO], Amount)
+coinSelection :: [UTXO] -> Amount -> Maybe (NE.NonEmpty UTXO, Amount)
 coinSelection utxos target = go (sortOn (^. utxoValue) utxos) 0 []
  where
   go [] total acc
-    | total >= target = Just (reverse acc, total)
+    | total >= target = Just (NE.fromList $ reverse acc, total)
     | otherwise = Nothing
   go (u : us) total acc
-    | total >= target = Just (reverse acc, total)
+    | total >= target = Just (NE.fromList $ reverse acc, total)
     | otherwise = go us (total + u ^. utxoValue) (u : acc)
 
 unspentTransactions :: Address -> UtxoSet -> [UTXO]
