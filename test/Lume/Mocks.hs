@@ -3,18 +3,18 @@
 module Lume.Mocks where
 
 import qualified Data.ByteString.Char8 as Char8
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Map as M
 import qualified Data.Text as Text
 import Data.Word (Word32, Word64)
-import Lume.Block.Builder (hashBlock)
-import Lume.Block.Types (Block (..), BlockHeader (..))
+import Lume.Block (Block (..), BlockHeader (..), hashBlock)
+import Lume.Block.Genesis (genesisBlock)
 import Lume.Consensus.Difficulty (Bits, initialBits)
 import Lume.Crypto.Address (Address (..))
 import Lume.Crypto.Hash (Hash, ToHash (toHash), hash')
 import Lume.Crypto.Signature (PublicKey (..), Signature (..), emptyPublicKey, emptySignature)
 import Lume.Time.Timestamp (Timestamp (Timestamp))
-import Lume.Transaction.Amount (Amount)
-import Lume.Transaction.Types
+import Lume.Transaction
 
 ----------------
 -- Mock Hashes
@@ -47,7 +47,7 @@ mockTimestampWithOffset offset = Timestamp (1234567890 + fromIntegral offset)
 -- Mock Addresses
 -------------------
 mockAddress :: Int -> Address
-mockAddress n = Address $ "lume_addr_" <> Text.pack ("lume_addr_" ++ show n)
+mockAddress n = Address $ "lume_addr_" <> Text.pack (show n)
 
 mockAddress1 :: Address
 mockAddress1 = mockAddress 1
@@ -137,7 +137,7 @@ mockOutpointTx1 = mockOutpoint mockTx1 0
 ---------------
 -- Mock UTXOs
 ---------------
-mockUTXO :: Hash -> Word64 -> Address -> Amount -> UTXO
+mockUTXO :: Hash -> Word64 -> Address -> Coin -> UTXO
 mockUTXO txId idx addr val =
   UTXO
     { _utxoId = txId
@@ -182,14 +182,8 @@ mockBlock header height txs =
   Block
     { _bHeader = header
     , _bHeight = height
-    , _bTxs = Txs txs
+    , _bTxs = Txs (NE.fromList txs)
     }
-
-mockGenesisBlockHeader :: BlockHeader
-mockGenesisBlockHeader = mockBlockHeader 1 0 mockHash1 mockHash2 mockTimestamp1 initialBits
-
-mockGenesisBlock :: Block
-mockGenesisBlock = mockBlock mockGenesisBlockHeader 0 []
 
 mockBlockHeader1 :: BlockHeader
 mockBlockHeader1 =
@@ -199,7 +193,7 @@ mockBlockHeader1 =
     , _bMerkleRoot = mockHash1
     , _bTimestamp = mockTimestamp1
     , _bBits = initialBits
-    , _bHashPrevBlock = hashBlock mockGenesisBlock
+    , _bHashPrevBlock = hashBlock genesisBlock
     }
 
 mockBlock1 :: Block
@@ -207,24 +201,5 @@ mockBlock1 =
   Block
     { _bHeader = mockBlockHeader1
     , _bHeight = 1
-    , _bTxs = Txs []
-    }
-
-mockBlockHeader2 :: BlockHeader
-mockBlockHeader2 =
-  BlockHeader
-    { _bVersion = 1
-    , _bNonce = 0
-    , _bMerkleRoot = mockHash2
-    , _bTimestamp = mockTimestamp2
-    , _bBits = initialBits
-    , _bHashPrevBlock = hashBlock mockBlock1
-    }
-
-mockBlock2 :: Block
-mockBlock2 =
-  Block
-    { _bHeader = mockBlockHeader2
-    , _bHeight = 2
-    , _bTxs = Txs []
+    , _bTxs = Txs $ NE.fromList [mockTx1, mockTx2]
     }

@@ -12,20 +12,27 @@ common warnings
 library
   import: warnings
   exposed-modules:
-    , Lume.Block.Types
-    , Lume.Block.Builder
-    , Lume.Transaction.Builder
-    , Lume.Transaction.Types
-    , Lume.Transaction.Amount
+    , Lume.Block
+    , Lume.Block.Internal
+    , Lume.Block.Genesis
+    , Lume.Transaction
+    , Lume.Transaction.Coin
+    , Lume.Transaction.Mempool
+    , Lume.Transaction.Internal
+    , Lume.Consensus
     , Lume.Consensus.PoW
     , Lume.Consensus.Difficulty
     , Lume.Crypto.Hash
     , Lume.Crypto.Address
     , Lume.Crypto.Signature
     , Lume.Crypto.MerkleTree
-    , Lume.Wallet.Tx
+    , Lume.Wallet
+    , Lume.Wallet.Internal
+    , Lume.Storage
     , Lume.Storage.Database
     , Lume.Storage.FileStorage
+    , Lume.Network
+    , Lume.Network.Internal
     , Lume.Time.Timestamp
   other-modules:
   hs-source-dirs: src
@@ -74,9 +81,9 @@ test-suite lume-test
     , Lume.Crypto.MerkleTreeTest
     , Lume.Consensus.DifficultyTest
     , Lume.Consensus.PoWTest
-    , Lume.Block.BuilderTest
-    , Lume.Transaction.BuilderTest
-    , Lume.Wallet.TxTest
+    , Lume.Block.InternalTest
+    , Lume.Transaction.InternalTest
+    , Lume.Wallet.InternalTest
     , Lume.Storage.DatabaseTest
     , Lume.Storage.FileStorageTest
   build-depends:

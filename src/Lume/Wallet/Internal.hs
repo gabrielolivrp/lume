@@ -2,7 +2,17 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Lume.Wallet.Tx where
+module Lume.Wallet.Internal (
+  -- * Types
+  BuildUnsignedTxParams (..),
+
+  -- * Errors
+  WalletError (..),
+
+  -- * Functions
+  buildUnsignedTx,
+)
+where
 
 import Control.Lens
 import Control.Monad
@@ -12,23 +22,21 @@ import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as M
 import Data.Text (Text)
 import Lume.Crypto.Address (Address)
-import Lume.Transaction.Amount (Amount)
-import Lume.Transaction.Builder (TxBuilderError, buildTx)
-import Lume.Transaction.Types
+import Lume.Transaction
 
 data WalletError
-  = InsufficientFunds
-  | NoUnspentOutputsAvailable
-  | InvalidTransactionValue Text
-  | InvalidTransactionFee Text
-  | TransactionBuildFailed TxBuilderError
+  = WalletInsufficientFundsError
+  | WalletNoUnspentOutputsError
+  | WalletInvalidTransactionValueError Text
+  | WalletInvalidTransactionFeeError Text
+  | WalletTransactionError TransactionError
   deriving (Show, Eq)
 
 data BuildUnsignedTxParams = BuildUnsignedTxParams
   { _sender :: Address
   , _recipient :: Address
-  , _value :: Amount
-  , _fee :: Amount
+  , _value :: Coin
+  , _fee :: Coin
   }
 
 buildUnsignedTx ::
@@ -37,11 +45,11 @@ buildUnsignedTx ::
   BuildUnsignedTxParams ->
   m Tx
 buildUnsignedTx utxoSet (BuildUnsignedTxParams sender recipient value fee) = do
-  when (value == 0) $ throwError (InvalidTransactionValue "Value must be greater than 0")
-  when (fee == 0) $ throwError (InvalidTransactionFee "Fee must be greater than 0")
+  when (value == 0) $ throwError (WalletInvalidTransactionValueError "Value must be greater than 0")
+  when (fee == 0) $ throwError (WalletInvalidTransactionFeeError "Fee must be greater than 0")
 
   let utxos = unspentTransactions sender utxoSet
-  when (null utxos) $ throwError NoUnspentOutputsAvailable
+  when (null utxos) $ throwError WalletNoUnspentOutputsError
 
   let txTotal = value + fee
   case coinSelection utxos txTotal of
@@ -49,14 +57,14 @@ buildUnsignedTx utxoSet (BuildUnsignedTxParams sender recipient value fee) = do
       let outpoints = makeOutpoints chosens
           outputs = makeOutputs sender recipient value fee sumChosens
       case buildTx outpoints outputs of
-        Left err -> throwError $ TransactionBuildFailed err
+        Left err -> throwError $ WalletTransactionError err
         Right tx -> pure tx
-    Nothing -> throwError InsufficientFunds
+    Nothing -> throwError WalletInsufficientFundsError
  where
   makeOutpoints :: NE.NonEmpty UTXO -> NE.NonEmpty Outpoint
   makeOutpoints = NE.map (\utxo -> Outpoint (utxo ^. utxoId) (utxo ^. utxoIdx))
 
-  makeOutputs :: Address -> Address -> Amount -> Amount -> Amount -> NE.NonEmpty (Address, Amount)
+  makeOutputs :: Address -> Address -> Coin -> Coin -> Coin -> NE.NonEmpty (Address, Coin)
   makeOutputs sender' recipient' value' fee' sumChosens
     | sender' == recipient' = NE.singleton (recipient', sumChosens - fee')
     | otherwise =
@@ -66,7 +74,7 @@ buildUnsignedTx utxoSet (BuildUnsignedTxParams sender recipient value fee) = do
               else NE.singleton (recipient', value')
 
 -- | smallest-first coin selection algorithm
-coinSelection :: [UTXO] -> Amount -> Maybe (NE.NonEmpty UTXO, Amount)
+coinSelection :: [UTXO] -> Coin -> Maybe (NE.NonEmpty UTXO, Coin)
 coinSelection utxos target = go (sortOn (^. utxoValue) utxos) 0 []
  where
   go [] total acc

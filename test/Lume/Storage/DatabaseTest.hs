@@ -12,12 +12,13 @@ import Control.Monad.Trans.Resource (runResourceT)
 import Data.Either (isLeft)
 import System.IO.Temp (withSystemTempDirectory)
 
-import Lume.Block.Builder (hashBlock)
+import Lume.Block (hashBlock)
+import Lume.Block.Genesis (genesisBlock)
 import Lume.Consensus.Difficulty (initialBits)
-import Lume.Mocks (mockAddress1, mockGenesisBlock)
+import Lume.Mocks (mockAddress1)
 import Lume.Storage.Database
 import Lume.Time.Timestamp (Timestamp (..))
-import Lume.Transaction.Amount (Amount (..))
+import Lume.Transaction (Coin (..))
 
 databaseTests :: TestTree
 databaseTests =
@@ -27,7 +28,7 @@ databaseTests =
         withSystemTempDirectory "database-test" $ \dir ->
           runResourceT $ do
             let config = defaultDatabaseConfig{_dbBasePath = dir}
-                blockHash = hashBlock mockGenesisBlock
+                blockHash = hashBlock genesisBlock
                 blockRecord =
                   BlockRecord
                     { _brVersion = 1
@@ -79,11 +80,11 @@ databaseTests =
         withSystemTempDirectory "dbtest" $ \dir ->
           runResourceT $ do
             let config = defaultDatabaseConfig{_dbBasePath = dir}
-                txHash = hashBlock mockGenesisBlock
+                txHash = hashBlock genesisBlock
                 utxo =
                   UTXORecord
                     { _urIsCoinbase = False
-                    , _urValue = Amount 5000
+                    , _urValue = Coin 5000
                     , _uIdx = 1
                     , _urOwner = mockAddress1
                     , _urHeight = 7

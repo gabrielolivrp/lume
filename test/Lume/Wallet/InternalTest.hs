@@ -1,19 +1,19 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Lume.Wallet.TxTest where
+module Lume.Wallet.InternalTest where
 
 import Control.Lens
 import Data.Either (isRight)
 import Lume.Mocks
-import Lume.Transaction.Types
-import Lume.Wallet.Tx
+import Lume.Transaction
+import Lume.Wallet
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
 
-walletTxTests :: TestTree
-walletTxTests =
+walletInternalTests :: TestTree
+walletInternalTests =
   testGroup
-    "Wallet.Tx"
+    "Wallet.Internal"
     [ testCase "should build unsigned transaction with exact funds" $ do
         let params = BuildUnsignedTxParams mockAddress1 mockAddress2 900 100
             utxoSet = mockUtxoSet [utxo1]
@@ -36,19 +36,19 @@ walletTxTests =
         let params = BuildUnsignedTxParams mockAddress1 mockAddress2 950 100
             utxoSet = mockUtxoSet [utxo1]
             result = buildUnsignedTx utxoSet params
-        result @?= Left InsufficientFunds
+        result @?= Left WalletInsufficientFundsError
     , testCase "should fail when no UTXOs available for address" $ do
         let params = BuildUnsignedTxParams mockAddress3 mockAddress2 500 100
             utxoSet = mockUtxoSet [utxo1]
             result = buildUnsignedTx utxoSet params
-        result @?= Left NoUnspentOutputsAvailable
+        result @?= Left WalletNoUnspentOutputsError
     , testCase "should fail when transaction value is zero" $ do
         let params = BuildUnsignedTxParams mockAddress1 mockAddress2 0 100
             utxoSet = mockUtxoSet [utxo1]
             result = buildUnsignedTx utxoSet params
         case result of
           Right _ -> assertFailure "buildUnsignedTx should have failed for zero value"
-          Left (InvalidTransactionValue _) -> pure ()
+          Left (WalletInvalidTransactionValueError _) -> pure ()
           Left err -> assertFailure $ "expected InvalidTransactionValue error, got: " <> show err
     , testCase "should fail when transaction fee is zero" $ do
         let params = BuildUnsignedTxParams mockAddress1 mockAddress2 500 0
@@ -56,6 +56,6 @@ walletTxTests =
             result = buildUnsignedTx utxoSet params
         case result of
           Right _ -> assertFailure "buildUnsignedTx should have failed for zero fee"
-          Left (InvalidTransactionFee _) -> pure ()
+          Left (WalletInvalidTransactionFeeError _) -> pure ()
           Left err -> assertFailure $ "expected InvalidTransactionFee error, got: " <> show err
     ]

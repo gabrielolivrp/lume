@@ -3,27 +3,30 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-module Lume.Transaction.Amount (
-  Amount (..),
+module Lume.Transaction.Coin (
+  -- * Types
+  Coin (..),
+
+  -- * Functions
+  maxCoin,
   safeSubtract,
-  maxAmount,
 ) where
 
 import Data.Binary (Binary)
 import GHC.Generics (Generic)
 import GHC.Natural (Natural)
 
-newtype Amount = Amount Natural
+newtype Coin = Coin Natural
   deriving stock (Show, Eq, Ord, Generic)
   deriving newtype (Num, Enum, Real, Integral)
   deriving anyclass (Binary)
 
-maxAmount :: Amount
-maxAmount = Amount 2100000000000000
-{-# INLINE maxAmount #-}
+maxCoin :: Coin
+maxCoin = Coin 2100000000000000
+{-# INLINE maxCoin #-}
 
-safeSubtract :: Amount -> Amount -> Maybe Amount
-safeSubtract (Amount a) (Amount b)
-  | a >= b = Just (Amount (a - b))
+safeSubtract :: Coin -> Coin -> Maybe Coin
+safeSubtract (Coin a) (Coin b)
+  | a >= b = Just (Coin (a - b))
   | otherwise = Nothing
 {-# INLINE safeSubtract #-}

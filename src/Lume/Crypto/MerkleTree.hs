@@ -1,6 +1,20 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 
-module Lume.Crypto.MerkleTree where
+module Lume.Crypto.MerkleTree (
+  -- * Types
+  MerkleTree (..),
+  MerkleProof (..),
+  ProofElem (..),
+  Side (..),
+
+  -- * Functions
+  fromList,
+  generateProof,
+  verifyProof,
+  fromListWithRoot,
+  getMerkleHash,
+)
+where
 
 import Data.ByteString qualified as BS
 import Lume.Crypto.Hash (Hash, ToHash (toHash), hash', toRawBytes)

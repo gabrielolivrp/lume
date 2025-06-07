@@ -7,26 +7,29 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Lume.Storage.Database (
-  DatabaseConfig (..),
-  Database (..),
+  -- * Types
   Context (..),
-  DatabaseGetError (..),
+  Database (..),
+  DatabaseConfig (..),
+  DatabaseError (..),
   BlockStatus (..),
   BlockRecord (..),
   FileInfoRecord (..),
   UTXORecord (..),
+
+  -- * Database
   openDatabase,
   defaultDatabaseConfig,
-  mkBlockKey,
+
+  -- * Blocks
   putBlock,
   getBlock,
-  mkFileInfoKey,
   putFileInfo,
   getFileInfo,
-  mkLastBlockFileKey,
   putLastBlockFile,
   getLastBlockFile,
-  mkUtxoKey,
+
+  -- * Chainstate
   putUtxo,
   getUtxo,
   deleteUtxo,
@@ -46,7 +49,7 @@ import Lume.Consensus.Difficulty (Bits)
 import Lume.Crypto.Address (Address)
 import Lume.Crypto.Hash (Hash, toRawBytes)
 import Lume.Time.Timestamp (Timestamp)
-import Lume.Transaction.Amount (Amount)
+import Lume.Transaction (Coin)
 import System.FilePath ((</>))
 
 data Context
@@ -113,23 +116,23 @@ dbPut inst k v =
   let serialized = BSL.toStrict $ encode v
    in put inst defaultWriteOptions{sync = True} k serialized
 
-data DatabaseGetError
-  = DecodeError Text
-  | ValueNotFound
+data DatabaseError
+  = DatabaseDecodeError Text
+  | DatabaseValueNotFoundError
   deriving stock (Show, Eq)
 
 dbGet ::
   (MonadResource m, Binary a) =>
   DB ->
   BS.ByteString ->
-  m (Either DatabaseGetError a)
+  m (Either DatabaseError a)
 dbGet inst k = do
   bs <- get inst defaultReadOptions{fillCache = False} k
   case bs of
-    Nothing -> pure $ Left ValueNotFound
+    Nothing -> pure $ Left DatabaseValueNotFoundError
     Just bs' ->
       case decodeOrFail (BSL.fromStrict bs') of
-        Left (_, _, err) -> pure . Left . DecodeError . pack $ err
+        Left (_, _, err) -> pure . Left . DatabaseDecodeError . pack $ err
         Right (_, _, value) -> pure $ Right value
 
 dbDelete ::
@@ -188,7 +191,7 @@ getBlock ::
   (MonadResource m) =>
   Database 'BlockContext ->
   Hash ->
-  m (Either DatabaseGetError BlockRecord)
+  m (Either DatabaseError BlockRecord)
 getBlock db = dbGet (dbInst db) . mkBlockKey
 
 data FileInfoRecord = FileInfoRecord
@@ -216,7 +219,7 @@ getFileInfo ::
   (MonadResource m) =>
   Database 'BlockContext ->
   Word32 ->
-  m (Either DatabaseGetError FileInfoRecord)
+  m (Either DatabaseError FileInfoRecord)
 getFileInfo db = dbGet (dbInst db) . mkFileInfoKey
 
 mkLastBlockFileKey :: BS.ByteString
@@ -233,13 +236,13 @@ putLastBlockFile db = dbPut (dbInst db) mkLastBlockFileKey
 getLastBlockFile ::
   (MonadResource m) =>
   Database 'BlockContext ->
-  m (Either DatabaseGetError Word32)
+  m (Either DatabaseError Word32)
 getLastBlockFile db = dbGet (dbInst db) mkLastBlockFileKey
 
 data UTXORecord = UTXORecord
   { _urIsCoinbase :: !Bool
   -- ^ Is the UTXO a coinbase transaction?
-  , _urValue :: !Amount
+  , _urValue :: !Coin
   -- ^ Amount of coin in the output
   , _uIdx :: !Word32
   -- ^ Index of the output in the transaction
@@ -269,7 +272,7 @@ getUtxo ::
   Database 'ChainStateContext ->
   Hash ->
   Word32 ->
-  m (Either DatabaseGetError UTXORecord)
+  m (Either DatabaseError UTXORecord)
 getUtxo db txh vout = dbGet (dbInst db) (mkUtxoKey txh vout)
 
 deleteUtxo ::

@@ -4,7 +4,21 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 
-module Lume.Consensus.Difficulty where
+module Lume.Consensus.Difficulty (
+  -- * Types
+  Bits (..),
+  Target (..),
+
+  -- * Constants
+  initialBits,
+  maximumTarget,
+
+  -- * Functions
+  toTarget,
+  fromTarget,
+  adjustDifficulty,
+)
+where
 
 import Data.Binary (Binary)
 import Data.Bits qualified as B

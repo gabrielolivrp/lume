@@ -5,7 +5,19 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 
-module Lume.Crypto.Hash where
+module Lume.Crypto.Hash (
+  -- * Types
+  Hash (..),
+  ToHash (..),
+
+  -- * Functions
+  hash',
+  toHex,
+  toRawBytes,
+  fromRawBytes,
+  hash2Integer,
+)
+where
 
 import Crypto.Hash (Digest, SHA256, digestFromByteString, hash)
 import Data.Binary (Binary (get, put), Get, encode)

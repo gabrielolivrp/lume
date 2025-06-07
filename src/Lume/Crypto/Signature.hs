@@ -4,10 +4,13 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 
 module Lume.Crypto.Signature (
+  -- * Types
   Signature (..),
   PrivateKey (..),
   PublicKey (..),
   KeyPair (..),
+
+  -- * Functions
   generateKeyPair,
   sign,
   verify,

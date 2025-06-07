@@ -2,13 +2,17 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 module Lume.Consensus.PoW (
-  mineBlock,
+  -- * Types
+  MineError (..),
+
+  -- * Functions
   checkNonce,
+  mineBlock,
 ) where
 
 import Control.Lens
 import Control.Monad.Except (MonadError (throwError))
-import Lume.Block.Types (Block, BlockHeader, bHeader, bNonce)
+import Lume.Block (Block, BlockHeader, bHeader, bNonce)
 import Lume.Consensus.Difficulty (Target)
 import Lume.Crypto.Hash (ToHash (toHash), hash2Integer)
 

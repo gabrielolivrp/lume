@@ -1,6 +1,16 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 
-module Lume.Storage.FileStorage where
+module Lume.Storage.FileStorage (
+  -- * Types
+  FileStorageError (..),
+
+  -- * Functions
+  mkStorageFilePath,
+  writeBlock,
+  readBlock,
+  getFileSize,
+)
+where
 
 import Control.Monad (unless)
 import Data.Binary (decode, decodeOrFail, encode)
@@ -9,14 +19,14 @@ import Data.Text (Text, pack)
 import Data.Word (Word32)
 import GHC.IO.Handle (Handle, hFileSize)
 import GHC.IO.IOMode (IOMode (..))
-import Lume.Block.Types (Block)
+import Lume.Block (Block)
 import System.Directory (doesFileExist)
 import System.FilePath ((</>))
 import System.IO (SeekMode (AbsoluteSeek), hClose, hSeek, hTell, openBinaryFile)
 
-data ReadBlockError
-  = DecodeError Text
-  | InvalidPositionError
+data FileStorageError
+  = FileStorageDecodeError Text
+  | FileStorageInvalidPositionError
   deriving (Show, Eq)
 
 mkStorageFilePath :: FilePath -> Word32 -> FilePath
@@ -38,7 +48,7 @@ writeBlock fp block = do
     BSL.hPut h serialized
     pure pos
 
-readBlock :: FilePath -> Integer -> IO (Either ReadBlockError Block)
+readBlock :: FilePath -> Integer -> IO (Either FileStorageError Block)
 readBlock fp dataPos = withBinaryFile fp ReadMode $ \h -> do
   fileSize <- hFileSize h
   case checkPosition dataPos fileSize of
@@ -49,12 +59,12 @@ readBlock fp dataPos = withBinaryFile fp ReadMode $ \h -> do
       let size = decode sizeBS :: Word32
       blockBS <- BSL.hGet h (fromIntegral size)
       pure $ case decodeOrFail blockBS of
-        Left (_, _, err) -> Left $ DecodeError (pack err)
+        Left (_, _, err) -> Left $ FileStorageDecodeError (pack err)
         Right (_, _, block) -> Right block
  where
-  checkPosition :: Integer -> Integer -> Either ReadBlockError ()
+  checkPosition :: Integer -> Integer -> Either FileStorageError ()
   checkPosition pos fileSize
-    | pos >= fileSize = Left InvalidPositionError
+    | pos >= fileSize = Left FileStorageInvalidPositionError
     | otherwise = Right ()
 
 getFileSize :: FilePath -> IO Integer

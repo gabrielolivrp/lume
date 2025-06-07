@@ -1,6 +1,6 @@
 import Test.Tasty (TestTree, defaultMain, testGroup)
 
-import Lume.Block.BuilderTest (blockBuilderTests)
+import Lume.Block.InternalTest (blockInternalTests)
 import Lume.Consensus.DifficultyTest (difficultyTests)
 import Lume.Consensus.PoWTest (powTests)
 import Lume.Crypto.AddressTest (addressTests)
@@ -9,8 +9,8 @@ import Lume.Crypto.MerkleTreeTest (merkleTreeTests)
 import Lume.Crypto.SignatureTest (signatureTests)
 import Lume.Storage.DatabaseTest (databaseTests)
 import Lume.Storage.FileStorageTest (fileStorageTests)
-import Lume.Transaction.BuilderTest (transactionBuilderTests)
-import Lume.Wallet.TxTest (walletTxTests)
+import Lume.Transaction.InternalTest (transactionInternalTests)
+import Lume.Wallet.InternalTest (walletInternalTests)
 
 cryptoTests :: TestTree
 cryptoTests =
@@ -34,21 +34,21 @@ blockTests :: TestTree
 blockTests =
   testGroup
     "Block"
-    [ blockBuilderTests
+    [ blockInternalTests
     ]
 
 transactionTests :: TestTree
 transactionTests =
   testGroup
     "Transaction"
-    [ transactionBuilderTests
+    [ transactionInternalTests
     ]
 
 walletTests :: TestTree
 walletTests =
   testGroup
     "Wallet"
-    [ walletTxTests
+    [ walletInternalTests
     ]
 
 storageTests :: TestTree
