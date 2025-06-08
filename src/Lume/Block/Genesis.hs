@@ -32,7 +32,7 @@ genesisCoinbase =
     Left err -> error $ "Failed to build genesis coinbase transaction: " ++ show err
     Right tx -> tx
  where
-  genesisAddress = Address "foo"
+  genesisAddress = Address "lume_addr_14ch3yrpyqcychs7l2err55cf8mpzpedufaj02xthqyz0hrf3uxzsvrk4kv"
   genesisAmount = Coin 1000000
 
 genesisMerkleRoot :: Hash
