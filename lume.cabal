@@ -12,6 +12,8 @@ common warnings
 library
   import: warnings
   exposed-modules:
+    , CLI
+    , Lume
     , Lume.Block
     , Lume.Block.Internal
     , Lume.Block.Genesis
@@ -55,6 +57,7 @@ library
     , leveldb-haskell
     , directory
     , filepath
+    , optparse-applicative
   default-language: Haskell2010
 
 executable lume

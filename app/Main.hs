@@ -1,4 +1,8 @@
+{-# LANGUAGE ImportQualifiedPost #-}
+
 module Main where
 
+import CLI qualified
+
 main :: IO ()
-main = putStrLn "Hello, Haskell!"
+main = CLI.run
