@@ -31,8 +31,6 @@ module Lume.Block.Internal (
   buildBlock,
   hashBlock,
   computeMerkleRoot,
-  -- applyBlock,
-  -- applyBlockNoPrev,
 
   -- * Validation
   validateBlockIndex,
@@ -43,7 +41,7 @@ module Lume.Block.Internal (
 where
 
 import Control.Lens
-import Control.Monad.Except (MonadError, throwError)
+import Control.Monad.Except (MonadError, throwError, unless)
 import Data.Binary (Binary)
 import Data.Foldable (Foldable (toList))
 import Data.List.NonEmpty qualified as NE
@@ -54,7 +52,7 @@ import Lume.Consensus.Difficulty (Bits, initialBits)
 import Lume.Crypto.Hash (Hash, ToHash (toHash))
 import Lume.Crypto.MerkleTree qualified as MTree
 import Lume.Time.Timestamp (Timestamp)
-import Lume.Transaction (TransactionError, Tx, Txs (..), UtxoSet, isCoinbase, validateTx)
+import Lume.Transaction (TransactionError, Txs (..), UtxoSet, hashTx, isCoinbase, validateTx)
 
 data BlockHeader = BlockHeader
   { _bVersion :: !Word32
@@ -93,6 +91,7 @@ data BlockError
   | BlockInvalidMerkleRootError
   | BlockHashPrevBlockMismatchError
   | BlockInvalidTransactionError TransactionError
+  | BlockDuplicateTransactionError
   | BlockInvalidCoinbaseTransactionError
   | BlockMissingCoinbaseTransactionError
   deriving (Show, Eq)
@@ -112,13 +111,12 @@ buildBlockHeader prevBlock mroot timestamp =
     , _bHashPrevBlock = hashBlock prevBlock
     }
 
-buildBlock :: (MonadError BlockError m) => Block -> Timestamp -> Txs -> m Block
-buildBlock prevBlock timestamp txs = do
-  validateCoinbase (getTxs txs)
+buildBlock :: Block -> Timestamp -> Txs -> Block
+buildBlock prevBlock timestamp txs =
   let mroot = computeMerkleRoot txs
       blockHeader = buildBlockHeader prevBlock mroot timestamp
       blockHeight = (prevBlock ^. bHeight) + 1
-  pure $ Block blockHeader blockHeight txs
+   in Block blockHeader blockHeight txs
 
 hashBlock :: Block -> Hash
 hashBlock block = toHash (block ^. bHeader)
@@ -150,7 +148,14 @@ validatePrevBlockHash prevBlock block =
 validateTransactions :: (MonadError BlockError m) => UtxoSet -> Block -> m ()
 validateTransactions utxoSet block = do
   let txs = getTxs $ block ^. bTxs
-  validateCoinbase txs
+
+  unless (isCoinbase (NE.head txs)) $
+    throwError BlockMissingCoinbaseTransactionError
+
+  let txHashes = NE.map hashTx txs
+  when (length txHashes /= length (NE.nub txHashes)) $
+    throwError BlockDuplicateTransactionError
+
   mapM_ validate (NE.tail txs)
  where
   validate tx = do
@@ -158,9 +163,3 @@ validateTransactions utxoSet block = do
     case validateTx utxoSet tx of
       Left err -> throwError (BlockInvalidTransactionError err)
       Right _ -> pure ()
-
-validateCoinbase :: (MonadError BlockError m) => NE.NonEmpty Tx -> m ()
-validateCoinbase txs
-  | isCoinbase (NE.head txs) = pure ()
-  | otherwise = throwError BlockMissingCoinbaseTransactionError
-{-# INLINE validateCoinbase #-}

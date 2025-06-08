@@ -40,7 +40,7 @@ module Lume.Transaction.Internal (
   buildTxOut,
   signTx,
   signTxIn,
-  noSigTxHash,
+  hashTx,
   validateTx,
 
   -- * Errors
@@ -55,11 +55,12 @@ import Control.Monad.Except (MonadError (throwError))
 import Data.Binary (Binary)
 import Data.ByteString qualified as BS
 import Data.Foldable (find, toList)
+import Data.List (nub)
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as M
 import Data.Word (Word32, Word64)
 import GHC.Generics (Generic)
-import Lume.Crypto.Address (Address)
+import Lume.Crypto.Address (Address, fromPublicKey)
 import Lume.Crypto.Hash qualified as Hash
 import Lume.Crypto.Signature qualified as Sig
 import Lume.Transaction.Coin (Coin, maxCoin)
@@ -152,9 +153,13 @@ data SignTransactionError
 
 data TransactionError
   = TransactionInvalidError
-  | TransactionInvalidSignatureError
+  | TransactionDuplicateInputError
   | TransactionInsufficientFundsError
   | TransactionBuilderValueOverflowError
+  | InvalidInputOwnershipError TxIn
+  | TransactionInvalidSignatureError TxIn
+  | TransactionUtxoNotFoundError TxIn
+  | TransactionUnableToDeriveAddressError TxIn
   deriving (Show, Eq)
 
 data SigInput = SigInput
@@ -193,7 +198,7 @@ buildTxOut (addr, value) = do
 signTx :: (MonadError SignTransactionError m) => Tx -> NE.NonEmpty SigInput -> m Tx
 signTx tx sigins = do
   when (isCoinbase tx) (throwError SignTransactionCoinbaseNotAllowedError)
-  let hash = Hash.toRawBytes . noSigTxHash $ tx
+  let hash = Hash.toRawBytes . hashTx $ tx
   txins' <- mapM (go hash) (tx ^. txIn)
   pure (tx & txIn .~ txins')
  where
@@ -212,8 +217,8 @@ signTxIn txin hash sk =
         & txInPubKey .~ pk
         & txInSignature .~ signature
 
-noSigTxHash :: Tx -> Hash.Hash
-noSigTxHash = Hash.toHash . over (txIn . mapped) sanitize
+hashTx :: Tx -> Hash.Hash
+hashTx = Hash.toHash . over (txIn . mapped) sanitize
  where
   sanitize txin =
     txin
@@ -227,17 +232,32 @@ validateTx (UtxoSet utxos) tx = do
 
   inValue <- forM inputs $ \txin -> do
     let prevOut = txin ^. txInPrevOut
-    txout <- case M.lookup prevOut utxos of
-      Just utxo -> return utxo
-      Nothing -> throwError TransactionInvalidError
+
+    utxo <- case M.lookup prevOut utxos of
+      Just utxo -> pure utxo
+      Nothing -> throwError $ TransactionUtxoNotFoundError txin
+
+    txinAddr <- case fromPublicKey (txin ^. txInPubKey) of
+      Right addr -> pure addr
+      Left _ -> throwError $ TransactionUnableToDeriveAddressError txin
+
+    when (utxo ^. utxoOwner /= txinAddr) $
+      throwError (InvalidInputOwnershipError txin)
+
     let pubKey = txin ^. txInPubKey
         sig = txin ^. txInSignature
-        msg = Hash.toRawBytes $ noSigTxHash tx
-    unless (Sig.verify pubKey msg sig) $ throwError TransactionInvalidSignatureError
-    pure $ txout ^. utxoValue
+        msg = Hash.toRawBytes $ hashTx tx
+
+    unless (Sig.verify pubKey msg sig) $
+      throwError (TransactionInvalidSignatureError txin)
+
+    pure $ utxo ^. utxoValue
 
   let outValue = map (^. txOutValue) outputs
       totalIn = sum inValue
       totalOut = sum outValue
+
+  when (length inputs /= length (nub (map (^. txInPrevOut) inputs))) $
+    throwError TransactionDuplicateInputError
 
   when (totalIn < totalOut) $ throwError TransactionInsufficientFundsError

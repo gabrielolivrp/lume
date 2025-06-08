@@ -11,20 +11,16 @@ import Lume.Mocks
 import Lume.Time.Timestamp (Timestamp (..))
 import Lume.Transaction (Txs (..))
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (assertEqual, assertFailure, testCase)
+import Test.Tasty.HUnit (assertEqual, testCase)
 
 blockInternalTests :: TestTree
 blockInternalTests =
   testGroup
     "Block.Internal"
-    [ testCase "should build new block with incremented height" $
+    [ testCase "should build new block with incremented height" $ do
         let timestamp = Timestamp 123456
             txs = Txs $ NE.singleton mockTx1
-            result = buildBlock genesisBlock timestamp txs
-         in case result of
-              Left err ->
-                assertFailure $ "buildBlock failed unexpectedly: " <> show err
-              Right newBlock -> do
-                assertEqual "new block height" 1 (newBlock ^. bHeight)
-                assertEqual "new block transactions" txs (newBlock ^. bTxs)
+            newBlock = buildBlock genesisBlock timestamp txs
+        assertEqual "new block height" 1 (newBlock ^. bHeight)
+        assertEqual "new block transactions" txs (newBlock ^. bTxs)
     ]
