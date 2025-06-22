@@ -2,60 +2,95 @@
 
 module Lume.Wallet.InternalTest where
 
-import Control.Lens
-import Data.Either (isRight)
-import Lume.Mocks
-import Lume.Transaction
-import Lume.Wallet
+import Control.Monad.Except (MonadIO (liftIO), runExceptT)
+import qualified Data.Text as T
+import qualified Lume.Core.Crypto.Address as Addr
+import qualified Lume.Core.Crypto.Hash as Hash
+import qualified Lume.Core.Transaction as Tx
+import Lume.Mocks (mockUTXO)
+import Lume.Wallet.Internal
+import System.IO.Temp (withSystemTempDirectory)
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (assertBool, assertFailure, testCase, (@?=))
+import Test.Tasty.HUnit (assertBool, assertEqual, assertFailure, testCase)
 
 walletInternalTests :: TestTree
 walletInternalTests =
   testGroup
-    "Wallet.Internal"
-    [ testCase "should build unsigned transaction with exact funds" $ do
-        let params = BuildUnsignedTxParams mockAddress1 mockAddress2 900 100
-            utxoSet = mockUtxoSet [utxo1]
-            result = buildUnsignedTx utxoSet params
-        assertBool "transaction should build successfully with exact funds" $ isRight result
-    , testCase "should create change output when funds exceed requirements" $ do
-        let params = BuildUnsignedTxParams mockAddress1 mockAddress2 800 100
-            utxoSet = mockUtxoSet [utxo1]
-            result = buildUnsignedTx utxoSet params
-        case result of
-          Right tx -> do
-            let outputs = tx ^. txOut
-            length outputs @?= 2
-            let recipientAmount = _txOutValue (head outputs)
-                changeAmount = _txOutValue (outputs !! 1)
-            recipientAmount @?= 800
-            changeAmount @?= 100
-          Left err -> assertFailure $ "buildUnsignedTx failed unexpectedly: " <> show err
-    , testCase "should fail with insufficient funds" $ do
-        let params = BuildUnsignedTxParams mockAddress1 mockAddress2 950 100
-            utxoSet = mockUtxoSet [utxo1]
-            result = buildUnsignedTx utxoSet params
-        result @?= Left WalletInsufficientFundsError
-    , testCase "should fail when no UTXOs available for address" $ do
-        let params = BuildUnsignedTxParams mockAddress3 mockAddress2 500 100
-            utxoSet = mockUtxoSet [utxo1]
-            result = buildUnsignedTx utxoSet params
-        result @?= Left WalletNoUnspentOutputsError
-    , testCase "should fail when transaction value is zero" $ do
-        let params = BuildUnsignedTxParams mockAddress1 mockAddress2 0 100
-            utxoSet = mockUtxoSet [utxo1]
-            result = buildUnsignedTx utxoSet params
-        case result of
-          Right _ -> assertFailure "buildUnsignedTx should have failed for zero value"
-          Left (WalletInvalidTransactionValueError _) -> pure ()
-          Left err -> assertFailure $ "expected InvalidTransactionValue error, got: " <> show err
-    , testCase "should fail when transaction fee is zero" $ do
-        let params = BuildUnsignedTxParams mockAddress1 mockAddress2 500 0
-            utxoSet = mockUtxoSet [utxo1]
-            result = buildUnsignedTx utxoSet params
-        case result of
-          Right _ -> assertFailure "buildUnsignedTx should have failed for zero fee"
-          Left (WalletInvalidTransactionFeeError _) -> pure ()
-          Left err -> assertFailure $ "expected InvalidTransactionFee error, got: " <> show err
+    "Internal"
+    [ testCase "should create a new wallet with a valid address and correct name" $
+        withSystemTempDirectory "wallet-internal-test" $ \dir -> do
+          let testWalletName = mkWalletName "testWallet"
+          result <- runExceptT $ newWallet dir testWalletName
+          case result of
+            Left err -> assertFailure $ "Failed to create wallet: " ++ show err
+            Right wallet -> do
+              let Wallet name _ _ (Addr.Address addr) = wallet
+              assertEqual "Wallet name should match" testWalletName name
+              assertBool "Address should not be empty" (not $ T.null addr)
+    , testCase "should store and load a wallet correctly using WalletStorage" $
+        withSystemTempDirectory "wallet-internal-test" $ \dir -> do
+          let testWalletName = mkWalletName "testWallet"
+          _ <-
+            runExceptT $
+              newWallet dir testWalletName >>= \wallet -> do
+                walletStorage <- mkWalletStorage dir testWalletName
+                store walletStorage wallet
+                loaded <- load walletStorage
+                case loaded of
+                  Nothing -> fail "Failed to load wallet"
+                  Just w2 -> liftIO $ assertEqual "Loaded wallet should match the stored one" wallet w2
+          pure ()
+    , testCase "should store, retrieve and mark UTXO as spent using WalletStorage" $
+        withSystemTempDirectory "wallet-internal-test" $ \dir -> do
+          let testWalletName = mkWalletName "testWallet"
+          _ <- runExceptT $ do
+            wallet <- newWallet dir testWalletName
+            walletStorage <- mkWalletStorage dir testWalletName
+            store walletStorage wallet
+
+            -- Store UTXO
+            let txId = Hash.hash' "abcd1234" -- mock tx id
+                utxo = Tx.UTXO txId 0 (wAddr wallet) 1000
+            storeUTXO walletStorage utxo
+
+            -- Verify it's stored
+            utxos <- getUTXOs walletStorage
+            liftIO $ assertEqual "Should have one UTXO stored" 1 (length utxos)
+
+            -- Mark as spent
+            markUTXOAsSpent walletStorage txId 0
+
+            -- Get again — still exists unless you implement filtering of spent UTXOs
+            utxos2 <- getUTXOs walletStorage
+            liftIO $ assertEqual "UTXO should still exist after marking as spent" 0 (length utxos2)
+          pure ()
+    , testCase "should send transaction with valid inputs and outputs" $
+        withSystemTempDirectory "wallet-internal-test" $ \dir -> do
+          result <- runExceptT $ do
+            let walletName1 = mkWalletName "w1"
+                walletName2 = mkWalletName "w2"
+
+            -- Create wallets
+            wallet1 <- newWallet dir walletName1
+            walletStorage1 <- mkWalletStorage dir walletName1
+            store walletStorage1 wallet1
+
+            wallet2 <- newWallet dir walletName2
+            walletStorage2 <- mkWalletStorage dir walletName2
+            store walletStorage2 wallet1
+
+            -- Store UTXOs
+            let utxo1 = mockUTXO (Hash.hash' "tx1") 0 (wAddr wallet1) 100000
+                utxo2 = mockUTXO (Hash.hash' "tx2") 0 (wAddr wallet1) 100000
+                utxo3 = mockUTXO (Hash.hash' "tx3") 0 (wAddr wallet1) 100000
+                utxo4 = mockUTXO (Hash.hash' "tx4") 0 (wAddr wallet1) 100000
+
+            storeUTXO walletStorage1 utxo1
+            storeUTXO walletStorage1 utxo2
+            storeUTXO walletStorage1 utxo3
+            storeUTXO walletStorage1 utxo4
+
+            sendTransaction wallet1 walletStorage1 (wAddr wallet2) 500
+
+          assertEqual "Transaction should be sent successfully" (Right ()) result
     ]

@@ -1,20 +1,19 @@
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Lume.Mocks where
 
-import qualified Data.ByteString.Char8 as Char8
-import qualified Data.List.NonEmpty as NE
-import qualified Data.Map as M
-import qualified Data.Text as Text
+import Data.ByteString.Char8 qualified as Char8
+import Data.List.NonEmpty qualified as NE
+import Data.Map qualified as M
+import Data.Text qualified as Text
 import Data.Word (Word32, Word64)
-import Lume.Block (Block (..), BlockHeader (..), hashBlock)
-import Lume.Block.Genesis (genesisBlock)
-import Lume.Consensus.Difficulty (Bits, initialBits)
-import Lume.Crypto.Address (Address (..))
-import Lume.Crypto.Hash (Hash, ToHash (toHash), hash')
-import Lume.Crypto.Signature (PublicKey (..), Signature (..), emptyPublicKey, emptySignature)
-import Lume.Time.Timestamp (Timestamp (Timestamp))
-import Lume.Transaction
+import Lume.Core.Block (Bits, Block (..), BlockHeader (..), genesisBlock, hashBlock, initialBits)
+import Lume.Core.Crypto.Address (Address (..))
+import Lume.Core.Crypto.Hash (Hash, ToHash (toHash), hash')
+import Lume.Core.Crypto.Signature qualified as Sig
+import Lume.Core.Time.Timestamp (Timestamp (Timestamp))
+import Lume.Core.Transaction
 
 ----------------
 -- Mock Hashes
@@ -61,23 +60,23 @@ mockAddress3 = mockAddress 2
 -----------------------------
 -- Mock Keys and Signatures
 -----------------------------
-mockPubKey1 :: PublicKey
-mockPubKey1 = PublicKey "mock_pubkey_10000000000000000000"
+mockPubKey1 :: Sig.PublicKey
+mockPubKey1 = Sig.PublicKey "mock_pubkey_10000000000000000000"
 
-mockPubKey2 :: PublicKey
-mockPubKey2 = PublicKey "mock_pubkey_20000000000000000000"
+mockPubKey2 :: Sig.PublicKey
+mockPubKey2 = Sig.PublicKey "mock_pubkey_20000000000000000000"
 
-mockPubKey3 :: PublicKey
-mockPubKey3 = PublicKey "mock_pubkey_30000000000000000000"
+mockPubKey3 :: Sig.PublicKey
+mockPubKey3 = Sig.PublicKey "mock_pubkey_30000000000000000000"
 
-mockSignature1 :: Signature
-mockSignature1 = Signature "mock_signature_10000000000000000"
+mockSignature1 :: Sig.Signature
+mockSignature1 = Sig.Signature "mock_signature_10000000000000000"
 
-mockSignature2 :: Signature
-mockSignature2 = Signature "mock_signature_20000000000000000"
+mockSignature2 :: Sig.Signature
+mockSignature2 = Sig.Signature "mock_signature_20000000000000000"
 
-mockSignature3 :: Signature
-mockSignature3 = Signature "mock_signature_30000000000000000"
+mockSignature3 :: Sig.Signature
+mockSignature3 = Sig.Signature "mock_signature_30000000000000000"
 
 ---------------------
 -- Mock Transaction
@@ -91,7 +90,7 @@ mockTxOut2 = TxOut mockAddress2 2000
 mockTxOut3 :: TxOut
 mockTxOut3 = TxOut mockAddress3 3000
 
-mockTxIn :: Hash -> Word64 -> Signature -> PublicKey -> TxIn
+mockTxIn :: Hash -> Word64 -> Sig.Signature -> Sig.PublicKey -> TxIn
 mockTxIn txHash idx sig pubKey =
   TxIn
     { _txInPrevOut = Outpoint txHash idx
@@ -100,13 +99,13 @@ mockTxIn txHash idx sig pubKey =
     }
 
 txIn1 :: TxIn
-txIn1 = mockTxIn mockHash1 0 emptySignature emptyPublicKey
+txIn1 = mockTxIn mockHash1 0 Sig.emptySignature Sig.emptyKey
 
 txIn2 :: TxIn
-txIn2 = mockTxIn mockHash2 0 emptySignature emptyPublicKey
+txIn2 = mockTxIn mockHash2 0 Sig.emptySignature Sig.emptyKey
 
 txIn3 :: TxIn
-txIn3 = mockTxIn mockHash3 1 emptySignature emptyPublicKey
+txIn3 = mockTxIn mockHash3 1 Sig.emptySignature Sig.emptyKey
 
 mockTx1 :: Tx
 mockTx1 = Tx [] [mockTxOut1] 1
@@ -140,7 +139,7 @@ mockOutpointTx1 = mockOutpoint mockTx1 0
 mockUTXO :: Hash -> Word64 -> Address -> Coin -> UTXO
 mockUTXO txId idx addr val =
   UTXO
-    { _utxoId = txId
+    { _utxoTxId = txId
     , _utxoIdx = idx
     , _utxoOwner = addr
     , _utxoValue = val
@@ -158,7 +157,7 @@ utxo3 = mockUTXO mockHash3 1 mockAddress3 3000
 mockUtxoSet :: [UTXO] -> UtxoSet
 mockUtxoSet utxos =
   UtxoSet $
-    M.fromList [(Outpoint (_utxoId u) (_utxoIdx u), u) | u <- utxos]
+    M.fromList [(Outpoint (_utxoTxId u) (_utxoIdx u), u) | u <- utxos]
 
 mockBasicUtxoSet :: UtxoSet
 mockBasicUtxoSet = mockUtxoSet [utxo1, utxo2, utxo3]

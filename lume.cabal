@@ -14,28 +14,35 @@ library
   exposed-modules:
     , CLI
     , Lume
-    , Lume.Block
-    , Lume.Block.Internal
-    , Lume.Block.Genesis
-    , Lume.Transaction
-    , Lume.Transaction.Coin
-    , Lume.Transaction.Mempool
-    , Lume.Transaction.Internal
-    , Lume.Consensus
-    , Lume.Consensus.PoW
-    , Lume.Consensus.Difficulty
-    , Lume.Crypto.Hash
-    , Lume.Crypto.Address
-    , Lume.Crypto.Signature
-    , Lume.Crypto.MerkleTree
+    , Lume.Core
+    , Lume.Core.Block
+    , Lume.Core.Block.Internal
+    , Lume.Core.Block.Difficulty
+    , Lume.Core.Transaction
+    , Lume.Core.Transaction.Coin
+    , Lume.Core.Transaction.Internal
+    , Lume.Core.Crypto.Hash
+    , Lume.Core.Crypto.Address
+    , Lume.Core.Crypto.Signature
+    , Lume.Core.Crypto.MerkleTree
+    , Lume.Core.Time.Timestamp
+    , Lume.Node
+    , Lume.Node.Miner
+    , Lume.Node.Miner.PoW
+    , Lume.Node.Storage
+    , Lume.Node.Storage.Database
+    , Lume.Node.Storage.FileStorage
+    , Lume.Node.Network
+    , Lume.Node.Network.Internal
+    , Lume.Node.Config
     , Lume.Wallet
+    , Lume.Wallet.Storage.Database
+    , Lume.Wallet.Transaction
+    , Lume.Wallet.Transaction.Builder
+    , Lume.Wallet.Transaction.CoinSelection
+    , Lume.Wallet.Transaction.Signer
     , Lume.Wallet.Internal
-    , Lume.Storage
-    , Lume.Storage.Database
-    , Lume.Storage.FileStorage
-    , Lume.Network
-    , Lume.Network.Internal
-    , Lume.Time.Timestamp
+    , Lume.Wallet.Command
   other-modules:
   hs-source-dirs: src
   build-depends:
@@ -47,6 +54,8 @@ library
     , binary
     , crypton
     , memory
+    , network
+    , base16-bytestring
     , network-transport
     , network-transport-tcp
     , distributed-process
@@ -58,6 +67,7 @@ library
     , directory
     , filepath
     , optparse-applicative
+    , sqlite-simple
   default-language: Haskell2010
 
 executable lume
@@ -78,17 +88,20 @@ test-suite lume-test
   hs-source-dirs: test
   other-modules:
       Lume.Mocks
-    , Lume.Crypto.HashTest
-    , Lume.Crypto.AddressTest
-    , Lume.Crypto.SignatureTest
-    , Lume.Crypto.MerkleTreeTest
-    , Lume.Consensus.DifficultyTest
-    , Lume.Consensus.PoWTest
-    , Lume.Block.InternalTest
-    , Lume.Transaction.InternalTest
+    , Lume.Core.Block.DifficultyTest
+    , Lume.Core.Block.InternalTest
+    , Lume.Core.Crypto.HashTest
+    , Lume.Core.Crypto.AddressTest
+    , Lume.Core.Crypto.SignatureTest
+    , Lume.Core.Crypto.MerkleTreeTest
+    , Lume.Node.Miner.PoWTest
+    , Lume.Node.Storage.DatabaseTest
+    , Lume.Node.Storage.FileStorageTest
+    , Lume.Wallet.Storage.DatabaseTest
+    , Lume.Wallet.Transaction.BuilderTest
+    , Lume.Wallet.Transaction.BuilderTest
+    , Lume.Wallet.Transaction.SignerTest
     , Lume.Wallet.InternalTest
-    , Lume.Storage.DatabaseTest
-    , Lume.Storage.FileStorageTest
   build-depends:
       base
     , lume
