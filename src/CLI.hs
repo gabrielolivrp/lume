@@ -3,6 +3,7 @@
 module CLI where
 
 import GHC.Natural (Natural)
+import Lume.Node qualified as Node
 import Lume.Wallet qualified as Wallet
 import Options.Applicative
 
@@ -12,7 +13,9 @@ data Command
   deriving (Eq)
 
 data NodeCmd
-  = StartNode {privKey :: Maybe String}
+  = StartNode
+  { nodeConfigPath :: FilePath
+  }
   deriving (Eq)
 
 data WalletCmd
@@ -30,12 +33,9 @@ nodeCommands = hsubparser startCommand
       "start"
       ( info
           ( StartNode
-              <$> optional
-                ( strOption
-                    ( long "privkey"
-                        <> metavar "PRIVATE_KEY"
-                        <> help "Private key for the node"
-                    )
+              <$> strArgument
+                ( metavar "CONFIG_PATH"
+                    <> help "Path to the node configuration file"
                 )
           )
           (progDesc "Start the blockchain node")
@@ -133,8 +133,11 @@ handleWallet (GetWalletInfo walletName') =
   Wallet.getWalletInfoCommand (Wallet.mkWalletName walletName')
 handleWallet ListAddresses = Wallet.listAddressesCommand
 
+handleNode :: NodeCmd -> IO ()
+handleNode (StartNode configPath) = Node.startNodeCommand configPath
+
 handle :: Command -> IO ()
-handle (Node _) = do putStrLn "node..."
+handle (Node nodeCmd) = handleNode nodeCmd
 handle (Wallet walletCmd) = handleWallet walletCmd
 
 run :: IO ()

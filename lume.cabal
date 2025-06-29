@@ -27,14 +27,17 @@ library
     , Lume.Core.Crypto.MerkleTree
     , Lume.Core.Time.Timestamp
     , Lume.Node
+    , Lume.Node.Config
+    , Lume.Node.Command
     , Lume.Node.Miner
     , Lume.Node.Miner.PoW
     , Lume.Node.Storage
     , Lume.Node.Storage.Database
     , Lume.Node.Storage.FileStorage
     , Lume.Node.Network
-    , Lume.Node.Network.Internal
-    , Lume.Node.Config
+    , Lume.Node.Network.State
+    , Lume.Node.Network.P2P
+    , Lume.Node.Network.Types
     , Lume.Wallet
     , Lume.Wallet.Storage.Database
     , Lume.Wallet.Transaction
@@ -68,6 +71,7 @@ library
     , filepath
     , optparse-applicative
     , sqlite-simple
+    , aeson
   default-language: Haskell2010
 
 executable lume

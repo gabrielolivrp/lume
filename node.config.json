@@ -1,0 +1,10 @@
+{
+  "port": 8080,
+  "host": "127.0.1.1",
+  "peers": [],
+  "data_dir": ".lume",
+  "mining": {
+    "enabled": true,
+    "coinbase_address": "..."
+  }
+}
