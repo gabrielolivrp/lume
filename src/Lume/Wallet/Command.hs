@@ -4,82 +4,91 @@
 
 module Lume.Wallet.Command where
 
-import Control.Monad.Except (MonadError (throwError), forM_, runExceptT, throwError, unless)
+import Control.Monad (forM_, unless, when)
+import Control.Monad.Except (MonadError (throwError))
 import Data.Text qualified as T
 import GHC.Natural (Natural)
 import Lume.Core.Crypto.Address qualified as Addr
 import Lume.Core.Transaction.Coin
+import Lume.Wallet.Config (Config (cDataDir), parseConfig)
 import Lume.Wallet.Internal
 
 separator :: String
 separator = "====================================================="
 
-newWalletCommand :: WalletName -> IO ()
-newWalletCommand walletName = do
-  result <- runExceptT $ do
-    walletStorage <- mkWalletStorage ".lume" walletName
-    w <- newWallet ".lume" walletName
+printSection :: String -> IO ()
+printSection title = do
+  putStrLn $ "\n" ++ title
+  putStrLn separator
+
+newWalletCommand :: FilePath -> WalletName -> IO ()
+newWalletCommand configPath walletName = do
+  config <- parseConfig configPath
+  result <- runWalletM $ do
+    exists <- checkWalletExists (cDataDir config) walletName
+    when exists (throwError $ WalletAlreadyExistsError walletName)
+    walletStorage <- mkWalletStorage (cDataDir config) walletName
+    w <- newWallet walletName
     store walletStorage w
     pure w
   case result of
-    Left err -> putStrLn $ "❌ Failed to create wallet: " ++ show err
+    Left err -> putStrLn $ "❌ Could not create wallet: " ++ show err
     Right wallet -> do
-      putStrLn "✅ Wallet successfully created!\n"
+      putStrLn "\n✅ Wallet created successfully!"
       putStrLn separator
       showWalletInfo wallet
       putStrLn separator
 
-getWalletInfoCommand :: WalletName -> IO ()
-getWalletInfoCommand walletName = do
-  result <- runExceptT $ do
-    walletStorage <- mkWalletStorage ".lume" walletName
+getWalletInfoCommand :: FilePath -> WalletName -> IO ()
+getWalletInfoCommand configPath walletName = do
+  config <- parseConfig configPath
+  result <- runWalletM $ do
+    walletStorage <- mkWalletStorage (cDataDir config) walletName
     load walletStorage
   case result of
-    Left err -> putStrLn $ "❌ Failed to load wallet: " ++ show err
-    Right Nothing -> putStrLn "❌ Wallet not found."
+    Left err -> putStrLn $ "❌ Unable to load wallet: " ++ show err
+    Right Nothing -> putStrLn "⚠️ Wallet not found."
     Right (Just wallet) -> do
-      putStrLn "📄 Wallet Information\n"
-      putStrLn separator
+      printSection "📄 Wallet Information"
       showWalletInfo wallet
       putStrLn separator
 
-listAddressesCommand :: IO ()
-listAddressesCommand = do
-  result <- runExceptT $ loadAllWallets ".lume"
+listAddressesCommand :: FilePath -> IO ()
+listAddressesCommand configPath = do
+  config <- parseConfig configPath
+  result <- runWalletM $ loadAllWallets (cDataDir config)
   case result of
-    Left err -> putStrLn $ "❌ Failed to load wallets: " ++ show err
+    Left err -> putStrLn $ "❌ Could not retrieve wallets: " ++ show err
     Right wallets
-      | null wallets -> putStrLn "❌ No wallets found."
+      | null wallets -> putStrLn "⚠️ No wallets found."
       | otherwise -> do
-          putStrLn "🗂 Available Wallets"
-          putStrLn separator
+          printSection "🗂 Available Wallets"
           forM_ wallets $ \wallet -> do
             showWalletInfo wallet
             putStrLn separator
 
-sendTransactionCommand :: WalletName -> String -> Natural -> IO ()
-sendTransactionCommand walletName to amount = do
-  result <- runExceptT $ do
-    -- Check if the wallet exists
-    exists <- checkWalletExists ".lume" walletName
+sendTransactionCommand :: FilePath -> WalletName -> String -> Natural -> IO ()
+sendTransactionCommand configPath walletName to amount = do
+  config <- parseConfig configPath
+  result <- runWalletM $ do
+    exists <- checkWalletExists (cDataDir config) walletName
     unless exists $ throwError (WalletNotFoundError walletName)
 
-    -- Load the wallet
-    walletStorage <- mkWalletStorage ".lume" walletName
+    walletStorage <- mkWalletStorage (cDataDir config) walletName
     wallet <-
       load walletStorage >>= \case
         Nothing -> throwError $ WalletNotFoundError walletName
         Just w -> pure w
 
     case Addr.mkAddress (T.pack to) of
-      Left err -> throwError (WalletCryptoError . T.pack $ show err)
+      Left err -> throwError (WalletCryptoError $ show err)
       Right addr -> do
         let coin = Coin amount
         sendTransaction wallet walletStorage addr coin
 
   case result of
-    Left err -> putStrLn $ "❌ Failed to send transaction: " ++ show err
-    Right _ -> putStrLn "✅ Transaction successfully sent!"
+    Left err -> putStrLn $ "❌ Transaction failed: " ++ show err
+    Right _ -> putStrLn "✅ Transaction completed successfully!"
 
 showWalletInfo :: Wallet -> IO ()
 showWalletInfo (Wallet walletName _ pubKey (Addr.Address addr)) = do

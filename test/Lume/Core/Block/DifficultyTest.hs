@@ -27,28 +27,23 @@ coreDifficultyTests =
         toTarget (fromTarget originalTarget) @?= originalTarget
     , testCase "should maintain difficulty when timeframes match exactly" $ do
         let bits = fromTarget (maximumTarget `div` 2)
-            actualTime = Timestamp 1209600
-            expectedTime = Timestamp 1209600
-        adjustDifficulty bits actualTime expectedTime @?= bits
+        adjustDifficulty bits expectedRetargetInterval @?= bits
     , testCase "should increase difficulty when blocks are mined too quickly" $ do
         let bits = fromTarget (maximumTarget `div` 2)
-            actualTime = Timestamp 604800
-            expectedTime = Timestamp 1209600
-            adjustedBits = adjustDifficulty bits actualTime expectedTime
+            actualTime = Timestamp 29600
+            adjustedBits = adjustDifficulty bits actualTime
         assertBool "adjusted target should be lower than original target" $
           toTarget adjustedBits < toTarget bits
     , testCase "should decrease difficulty when blocks are mined too slowly" $ do
         let bits = fromTarget (maximumTarget `div` 2)
-            actualTime = Timestamp 1209600
-            expectedTime = Timestamp 304800
-            adjustedBits = adjustDifficulty bits actualTime expectedTime
+            actualTime = Timestamp 2419200
+            adjustedBits = adjustDifficulty bits actualTime
         assertBool "adjusted target should be higher than original target" $
           toTarget adjustedBits > toTarget bits
     , testCase "should limit difficulty decrease to 4.0x factor" $ do
         let bits = fromTarget (maximumTarget `div` 2)
             actualTime = Timestamp 6400000
-            expectedTime = Timestamp 1600000
-            adjusted = adjustDifficulty bits actualTime expectedTime
+            adjusted = adjustDifficulty bits actualTime
             originalTarget = toTarget bits
             expectedTarget =
               min

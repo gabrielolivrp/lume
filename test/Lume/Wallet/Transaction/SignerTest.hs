@@ -4,6 +4,7 @@
 module Lume.Wallet.Transaction.SignerTest where
 
 import Control.Lens
+import Data.Either (isLeft)
 import Data.List.NonEmpty qualified as NE
 import Lume.Core.Crypto.Signature qualified as Sig
 import Lume.Core.Transaction
@@ -30,4 +31,11 @@ walletSignerTests =
               firstInput ^. txInSignature /= Sig.emptySignature
             assertBool "signed transaction should have non-empty public key" $
               firstInput ^. txInPubKey /= Sig.emptyKey
+    , testCase "should fail to sign transaction with invalid signature inputs" $ do
+        Sig.KeyPair (_, privKey) <- Sig.generateKeyPair
+        let outputs = [TxOut mockAddress1 1000]
+            coinbase = mockCoinbaseTx 1 outputs
+        let invalidSigTxIns = NE.singleton (SigTxIn (Outpoint mockHash2 0) privKey)
+        assertBool "signed transaction should fail with invalid inputs" $
+          isLeft (signTx coinbase invalidSigTxIns)
     ]

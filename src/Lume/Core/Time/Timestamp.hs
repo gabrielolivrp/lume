@@ -4,6 +4,7 @@
 
 module Lume.Core.Time.Timestamp where
 
+import Data.Aeson
 import Data.Binary (Binary (get, put))
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import Data.Word (Word32)
@@ -16,6 +17,9 @@ newtype Timestamp = Timestamp Word32
 instance Binary Timestamp where
   put (Timestamp ts) = put ts
   get = Timestamp <$> get
+
+instance ToJSON Timestamp where
+  toJSON (Timestamp ts) = toJSON ts
 
 getCurrentTimestamp :: IO Timestamp
 getCurrentTimestamp = Timestamp . floor <$> getPOSIXTime

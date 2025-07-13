@@ -20,6 +20,7 @@ module Lume.Core.Crypto.Signature (
 
 import Crypto.Error (CryptoFailable (CryptoFailed, CryptoPassed))
 import Crypto.PubKey.Ed25519 qualified as Ed25519
+import Data.Aeson hiding (Key)
 import Data.Binary (Binary (get, put))
 import Data.Binary.Get (getByteString)
 import Data.Binary.Put (putByteString)
@@ -43,6 +44,9 @@ instance Binary Signature where
   put (Signature sig)
     | BS.length sig == Ed25519.signatureSize = putByteString sig
     | otherwise = error "Invalid signature size"
+
+instance ToJSON Signature where
+  toJSON (Signature sig) = toJSON $ toBase18' sig
 
 newtype PrivateKey = PrivateKey BS.ByteString
   deriving stock (Eq, Generic)
@@ -83,6 +87,9 @@ instance Key PublicKey where
     | otherwise = Nothing
   toBase18 (PublicKey pk) = toBase18' pk
   emptyKey = PublicKey (BS.replicate Ed25519.publicKeySize 0)
+
+instance ToJSON PublicKey where
+  toJSON (PublicKey pk) = toJSON $ toBase18' pk
 
 newtype KeyPair = KeyPair (PublicKey, PrivateKey)
   deriving stock (Show, Eq, Generic)

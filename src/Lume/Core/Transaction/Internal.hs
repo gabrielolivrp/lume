@@ -3,6 +3,7 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Lume.Core.Transaction.Internal (
@@ -40,21 +41,21 @@ module Lume.Core.Transaction.Internal (
   -- * Functions
   transactionVersion,
   isCoinbase,
-  hashTx,
+  txHash,
   buildCoinbaseTx,
   buildTx,
 )
 where
 
-import Control.Lens
+import Control.Lens hiding ((.=))
 import Control.Monad (forM, unless, when)
-import Control.Monad.Except (MonadError (throwError))
+import Data.Aeson
 import Data.Binary (Binary (get, put))
 import Data.Foldable (toList)
 import Data.List (nub)
 import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as M
-import Data.Word (Word32, Word64)
+import Data.Word (Word32)
 import GHC.Generics (Generic)
 import Lume.Core.Crypto.Address (Address, fromPublicKey)
 import Lume.Core.Crypto.Hash qualified as Hash
@@ -64,7 +65,7 @@ import Lume.Core.Transaction.Coin (Coin)
 data Outpoint = Outpoint
   { _outpId :: !Hash.Hash
   -- ^ Hash of the transaction
-  , _outpIdx :: !Word64
+  , _outpIdx :: !Word32
   -- ^ Output index within the source transaction
   }
   deriving (Show, Eq, Ord, Generic)
@@ -73,6 +74,13 @@ instance Binary Outpoint where
   put (Outpoint txId idx) = do
     put txId
     put idx
+
+instance ToJSON Outpoint where
+  toJSON (Outpoint txId idx) =
+    object
+      [ "tx_id" .= txId
+      , "idx" .= idx
+      ]
 
 makeLenses ''Outpoint
 
@@ -95,6 +103,14 @@ instance Binary TxIn where
 
 makeLenses ''TxIn
 
+instance ToJSON TxIn where
+  toJSON (TxIn prevOut signature pubKey) =
+    object
+      [ "prev_out" .= prevOut
+      , "signature" .= signature
+      , "pub_key" .= pubKey
+      ]
+
 data TxOut = TxOut
   { _txOutAddress :: !Address
   -- ^ Address that will receive the funds
@@ -110,6 +126,13 @@ instance Binary TxOut where
   get = TxOut <$> get <*> get
 
 makeLenses ''TxOut
+
+instance ToJSON TxOut where
+  toJSON (TxOut address value) =
+    object
+      [ "address" .= address
+      , "value" .= value
+      ]
 
 data Tx = Tx
   { _txIn :: ![TxIn]
@@ -129,6 +152,14 @@ instance Binary Tx where
     put version
   get = Tx <$> get <*> get <*> get
 
+instance ToJSON Tx where
+  toJSON (Tx inputs outputs version) =
+    object
+      [ "inputs" .= inputs
+      , "outputs" .= outputs
+      , "version" .= version
+      ]
+
 makeLenses ''Tx
 
 newtype Txs = Txs {getTxs :: NE.NonEmpty Tx}
@@ -138,12 +169,15 @@ instance Binary Txs where
   put (Txs txs) = put (NE.toList txs)
   get = Txs . NE.fromList <$> get
 
+instance ToJSON Txs where
+  toJSON (Txs txs) = toJSON $ map toJSON (NE.toList txs)
+
 makeLenses ''Txs
 
 data UTXO = UTXO
   { _utxoTxId :: !Hash.Hash
   -- ^ Hash of the transaction
-  , _utxoIdx :: !Word64
+  , _utxoIdx :: !Word32
   -- ^ Index of the output in the transaction
   , _utxoOwner :: !Address
   -- ^ Address that owns this unspent output
@@ -184,8 +218,8 @@ buildCoinbaseTx xs =
     , _txVersion = transactionVersion
     }
 
-hashTx :: Tx -> Hash.Hash
-hashTx = Hash.toHash . over (txIn . mapped) sanitize
+txHash :: Tx -> Hash.Hash
+txHash = Hash.toHash . over (txIn . mapped) sanitize
  where
   sanitize txin =
     txin
@@ -207,7 +241,7 @@ data TransactionError
   | TransactionUnableToDeriveAddressError TxIn
   deriving (Show, Eq)
 
-validateTx :: (MonadError TransactionError m) => UtxoSet -> Tx -> m ()
+validateTx :: UtxoSet -> Tx -> Either TransactionError ()
 validateTx (UtxoSet utxos) tx = do
   let inputs = tx ^. txIn
       outputs = tx ^. txOut
@@ -217,21 +251,21 @@ validateTx (UtxoSet utxos) tx = do
 
     utxo <- case M.lookup prevOut utxos of
       Just utxo -> pure utxo
-      Nothing -> throwError $ TransactionUtxoNotFoundError txin
+      Nothing -> Left $ TransactionUtxoNotFoundError txin
 
     txinAddr <- case fromPublicKey (txin ^. txInPubKey) of
       Right addr -> pure addr
-      Left _ -> throwError $ TransactionUnableToDeriveAddressError txin
+      Left _ -> Left $ TransactionUnableToDeriveAddressError txin
 
     when (utxo ^. utxoOwner /= txinAddr) $
-      throwError (InvalidInputOwnershipError txin)
+      Left (InvalidInputOwnershipError txin)
 
     let pubKey = txin ^. txInPubKey
         sig = txin ^. txInSignature
-        msg = Hash.toRawBytes $ hashTx tx
+        msg = Hash.toRawBytes $ txHash tx
 
     unless (Sig.verify pubKey msg sig) $
-      throwError (TransactionInvalidSignatureError txin)
+      Left (TransactionInvalidSignatureError txin)
 
     pure $ utxo ^. utxoValue
 
@@ -240,6 +274,6 @@ validateTx (UtxoSet utxos) tx = do
       totalOut = sum outValue
 
   when (length inputs /= length (nub (map (^. txInPrevOut) inputs))) $
-    throwError TransactionDuplicateInputError
+    Left TransactionDuplicateInputError
 
-  when (totalIn < totalOut) $ throwError TransactionInsufficientFundsError
+  when (totalIn < totalOut) $ Left TransactionInsufficientFundsError

@@ -8,9 +8,9 @@ module Lume.Core.Transaction.Coin (
 
   -- * Functions
   maxCoin,
-  safeSubtract,
 ) where
 
+import Data.Aeson (ToJSON (toJSON))
 import Data.Binary (Binary (get, put))
 import GHC.Generics (Generic)
 import GHC.Natural (Natural)
@@ -25,14 +25,19 @@ instance Binary Coin where
   get = Coin <$> get
 
 instance Show Coin where
-  show (Coin n) = printf "%.8f" (fromIntegral n / 100000000 :: Double)
+  show = format
+
+instance ToJSON Coin where
+  toJSON (Coin n) = toJSON n
+
+coin :: Coin
+coin = Coin 100000000 -- 1 Coin = 100,000,000
+{-# INLINE coin #-}
 
 maxCoin :: Coin
-maxCoin = Coin 2100000000000000
+maxCoin = Coin (21000000 * fromIntegral coin)
 {-# INLINE maxCoin #-}
 
-safeSubtract :: Coin -> Coin -> Maybe Coin
-safeSubtract (Coin a) (Coin b)
-  | a >= b = Just (Coin (a - b))
-  | otherwise = Nothing
-{-# INLINE safeSubtract #-}
+format :: Coin -> String
+format (Coin n) = printf "%.8f" (fromIntegral n / fromIntegral coin :: Double)
+{-# INLINE format #-}

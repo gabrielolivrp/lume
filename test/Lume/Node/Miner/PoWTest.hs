@@ -32,8 +32,8 @@ nodeMinerPoWTests =
               checkNonce (minedBlock ^. bHeader) target
     , testCase "should fail when nonce would overflow" $ do
         let blockWithMaxNonce = genesisBlock & bHeader . bNonce .~ maxBound
-            strictestTarget = Target 0
-            result = mineBlock blockWithMaxNonce strictestTarget
+            target = Target 0
+            result = mineBlock blockWithMaxNonce target
         case result of
           Left _ ->
             pure ()

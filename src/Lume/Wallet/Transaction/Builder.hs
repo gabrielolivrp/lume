@@ -16,7 +16,7 @@ where
 
 import Control.Lens
 import Control.Monad
-import Control.Monad.Except (MonadError, throwError)
+
 import Data.List.NonEmpty qualified as NE
 import Data.Text (Text)
 import Lume.Core.Crypto.Address (Address)
@@ -37,24 +37,18 @@ data BuildUnsignedTxParams = BuildUnsignedTxParams
   , _fee :: Coin
   }
 
-buildUnsignedTx ::
-  (Monad m, MonadError TxBuilderError m) =>
-  [UTXO] ->
-  BuildUnsignedTxParams ->
-  m Tx
+buildUnsignedTx :: [UTXO] -> BuildUnsignedTxParams -> Either TxBuilderError Tx
 buildUnsignedTx utxos (BuildUnsignedTxParams sender recipient value fee) = do
-  when (value == 0) $ throwError (WalletInvalidTransactionValueError "Value must be greater than 0")
-  when (fee == 0) $ throwError (WalletInvalidTransactionFeeError "Fee must be greater than 0")
-
-  when (null utxos) $ throwError WalletNoUnspentOutputsError
-
+  when (value == 0) $ Left (WalletInvalidTransactionValueError "Value must be greater than 0")
+  when (fee == 0) $ Left (WalletInvalidTransactionFeeError "Fee must be greater than 0")
+  when (null utxos) $ Left WalletNoUnspentOutputsError
   let txTotal = value + fee
   case coinSelection utxos txTotal of
     Just (chosens, sumChosens) -> do
       let outpoints = makeOutpoints chosens
           outputs = makeOutputs sender recipient value fee sumChosens
       pure $ buildTx outpoints outputs
-    Nothing -> throwError WalletInsufficientFundsError
+    Nothing -> Left WalletInsufficientFundsError
  where
   makeOutpoints :: NE.NonEmpty UTXO -> NE.NonEmpty Outpoint
   makeOutpoints = NE.map (\utxo -> Outpoint (utxo ^. utxoTxId) (utxo ^. utxoIdx))

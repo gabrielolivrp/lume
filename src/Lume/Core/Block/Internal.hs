@@ -30,6 +30,7 @@ module Lume.Core.Block.Internal (
   validateBlockIndex,
   validatePrevBlockHash,
   validateTransactions,
+  validateBlock,
 
   -- * Block Builder
   buildBlock,
@@ -37,18 +38,18 @@ module Lume.Core.Block.Internal (
 
   -- * Functions
   blockVersion,
-  hashBlock,
+  blockHash,
   computeMerkleRoot,
 )
 where
 
-import Control.Lens
-import Control.Monad.Except (MonadError, throwError, unless)
+import Control.Lens hiding ((.=))
+import Control.Monad (unless, when)
+import Data.Aeson
 import Data.Binary (Binary (get, put))
 import Data.Foldable (Foldable (toList))
 import Data.List.NonEmpty qualified as NE
 import Data.Word (Word32, Word64)
-import GHC.Base (when)
 import GHC.Generics (Generic)
 import Lume.Core.Block.Difficulty (Bits, initialBits)
 import Lume.Core.Crypto.Address (Address (Address))
@@ -85,6 +86,17 @@ instance Binary BlockHeader where
 
   get = BlockHeader <$> get <*> get <*> get <*> get <*> get <*> get
 
+instance ToJSON BlockHeader where
+  toJSON (BlockHeader version nonce mroot hashPrev timestamp bits) =
+    object
+      [ "version" .= version
+      , "nonce" .= nonce
+      , "merkle_root" .= mroot
+      , "previous_block_hash" .= hashPrev
+      , "timestamp" .= timestamp
+      , "bits" .= bits
+      ]
+
 makeLenses ''BlockHeader
 
 data Block = Block
@@ -96,6 +108,14 @@ data Block = Block
   -- ^ Transactions in the block
   }
   deriving (Eq, Show, Generic)
+
+instance ToJSON Block where
+  toJSON (Block header height txs) =
+    object
+      [ "header" .= header
+      , "height" .= height
+      , "tx" .= txs
+      ]
 
 instance Binary Block where
   put (Block header height txs) = do
@@ -110,9 +130,9 @@ blockVersion :: Word32
 blockVersion = 0x00000001
 {-# INLINE blockVersion #-}
 
-hashBlock :: Block -> Hash.Hash
-hashBlock block = Hash.toHash (block ^. bHeader)
-{-# INLINE hashBlock #-}
+blockHash :: Block -> Hash.Hash
+blockHash block = Hash.toHash (block ^. bHeader)
+{-# INLINE blockHash #-}
 
 computeMerkleRoot :: Txs -> Hash.Hash
 computeMerkleRoot = snd . MTree.fromListWithRoot . toList . getTxs
@@ -130,7 +150,7 @@ buildBlockHeader prevBlock bits mroot timestamp =
     , _bMerkleRoot = mroot
     , _bTimestamp = timestamp
     , _bBits = bits
-    , _bHashPrevBlock = hashBlock prevBlock
+    , _bHashPrevBlock = blockHash prevBlock
     }
 
 buildBlock :: Block -> Bits -> Timestamp -> Txs -> Block
@@ -145,7 +165,7 @@ buildBlock prevBlock bits timestamp txs =
 -----------------
 
 genesisHashPrev :: Hash.Hash
-genesisHashPrev = Hash.hash' "genesis block"
+genesisHashPrev = Hash.hash' "block_hash"
 
 genesisTimestamp :: Timestamp
 genesisTimestamp = Timestamp 1717699200
@@ -159,7 +179,7 @@ genesisCoinbase :: Tx
 genesisCoinbase = buildCoinbaseTx $ NE.singleton (genesisAddress, genesisAmount)
  where
   genesisAddress = Address "lume_addr_14ch3yrpyqcychs7l2err55cf8mpzpedufaj02xthqyz0hrf3uxzsvrk4kv"
-  genesisAmount = Coin 1000000
+  genesisAmount = Coin 100000000
 
 genesisMerkleRoot :: Hash.Hash
 genesisMerkleRoot = computeMerkleRoot (Txs (NE.singleton genesisCoinbase))
@@ -194,40 +214,47 @@ data BlockError
   | BlockMissingCoinbaseTransactionError
   deriving (Show, Eq)
 
-validateMerkleRoot :: (MonadError BlockError m) => Hash.Hash -> Txs -> m ()
+validateMerkleRoot :: Hash.Hash -> Txs -> Either BlockError ()
 validateMerkleRoot expectedRoot txs
   | expectedRoot == computeMerkleRoot txs = pure ()
-  | otherwise = throwError BlockInvalidMerkleRootError
+  | otherwise = Left BlockInvalidMerkleRootError
 {-# INLINE validateMerkleRoot #-}
 
-validateBlockIndex :: (MonadError BlockError m) => Block -> Block -> m ()
+validateBlockIndex :: Block -> Block -> Either BlockError ()
 validateBlockIndex prevBlock block =
   let expectedHeight = prevBlock ^. bHeight + 1
-   in when (block ^. bHeight /= expectedHeight) $ throwError BlockInvalidHeightError
+   in when (block ^. bHeight /= expectedHeight) $ Left BlockInvalidHeightError
 {-# INLINE validateBlockIndex #-}
 
-validatePrevBlockHash :: (MonadError BlockError m) => Block -> Block -> m ()
+validatePrevBlockHash :: Block -> Block -> Either BlockError ()
 validatePrevBlockHash prevBlock block =
-  let expectedHash = hashBlock prevBlock
+  let expectedHash = blockHash prevBlock
    in when (block ^. bHeader . bHashPrevBlock /= expectedHash) $
-        throwError BlockHashPrevBlockMismatchError
+        Left BlockHashPrevBlockMismatchError
 {-# INLINE validatePrevBlockHash #-}
 
-validateTransactions :: (MonadError BlockError m) => UtxoSet -> Block -> m ()
+validateTransactions :: UtxoSet -> Block -> Either BlockError ()
 validateTransactions utxoSet block = do
-  let txs = getTxs $ block ^. bTxs
+  let txs = getTxs (block ^. bTxs)
 
   unless (isCoinbase (NE.head txs)) $
-    throwError BlockMissingCoinbaseTransactionError
+    Left BlockMissingCoinbaseTransactionError
 
-  let txHashes = NE.map hashTx txs
+  let txHashes = NE.map txHash txs
   when (length txHashes /= length (NE.nub txHashes)) $
-    throwError BlockDuplicateTransactionError
+    Left BlockDuplicateTransactionError
 
   mapM_ validate (NE.tail txs)
  where
   validate tx = do
-    when (isCoinbase tx) $ throwError BlockInvalidCoinbaseTransactionError
+    when (isCoinbase tx) $ Left BlockInvalidCoinbaseTransactionError
     case validateTx utxoSet tx of
-      Left err -> throwError (BlockInvalidTransactionError err)
+      Left err -> Left (BlockInvalidTransactionError err)
       Right _ -> pure ()
+
+validateBlock :: UtxoSet -> Block -> Block -> Either BlockError ()
+validateBlock utxoSet prevBlock block = do
+  validateBlockIndex prevBlock block
+  validatePrevBlockHash prevBlock block
+  validateMerkleRoot (block ^. bHeader . bMerkleRoot) (block ^. bTxs)
+  validateTransactions utxoSet block

@@ -1,3 +1,4 @@
+{-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Lume.Node.Network.P2P (
@@ -7,13 +8,14 @@ where
 
 import Control.Distributed.Process
 import Control.Distributed.Process.Node
-import Control.Monad (forever)
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Char8 as Char8
-import qualified Data.Set as S
-import Lume.Node.Config (NodeConfig (ncHost, ncPeers, ncPort))
+import Control.Monad (forever, void)
+import Data.ByteString qualified as BS
+import Data.ByteString.Char8 qualified as Char8
+import Data.Set qualified as S
+import Lume.Node.Config (Config (cHost, cPeers, cPort))
+import Lume.Node.Network.Peer (Peer (Peer, getNodeId))
+import Lume.Node.Network.RPC (startServer)
 import Lume.Node.Network.State (State, addPeer, getPeers, mkState, removePeer)
-import Lume.Node.Network.Types (Peer (Peer, getNodeId))
 import Network.Transport (EndPointAddress (EndPointAddress))
 import Network.Transport.TCP (createTransport, defaultTCPAddr, defaultTCPParameters)
 
@@ -28,15 +30,16 @@ createLocalNode host port = do
     Left err -> error $ "Error creating transport: " ++ show err
     Right transport -> newLocalNode transport initRemoteTable
 
-startNode :: NodeConfig -> IO ()
+startNode :: Config -> IO ()
 startNode config = do
-  let host = ncHost config
-      port = show $ ncPort config
-  localNode <- createLocalNode host port
+  let host = cHost config
+      port = show (cPort config)
+      bootnodes = map mkNodeId (cPeers config)
   state <- mkState
-  let bootnodes = map mkNodeId (ncPeers config)
-  _ <- forkProcess localNode $ peerController state bootnodes
-  runProcess localNode $ messageController state
+  localNode <- createLocalNode host port
+  void $ forkProcess localNode (rpcController config state)
+  void $ forkProcess localNode (peerController state bootnodes)
+  runProcess localNode (messageController state)
 
 peerControllerName :: String
 peerControllerName = "peer-controller"
@@ -72,7 +75,7 @@ peerController state bootnodes = do
         -- Add the discovered peer to the state's peer list
         liftIO (addPeer state (Peer peerNid))
         -- Monitor the peer process
-        _ <- monitor pid
+        void $ monitor pid
         -- Send known peers to the discovered peer
         knownPeers <- liftIO (getPeers state)
         nsendRemote peerNid peerControllerName knownPeers
@@ -102,3 +105,12 @@ messageController _node = do
   forever $
     receiveWait
       []
+
+rpcControllerName :: String
+rpcControllerName = "rpc-controller"
+
+rpcController :: Config -> State -> Process ()
+rpcController config state = do
+  say "Starting RPC server"
+  register rpcControllerName =<< getSelfPid
+  liftIO (startServer config state)

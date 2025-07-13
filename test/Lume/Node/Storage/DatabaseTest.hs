@@ -1,22 +1,18 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Lume.Node.Storage.DatabaseTest where
 
 import Test.Tasty (TestTree, testGroup)
-import Test.Tasty.HUnit (assertBool, assertEqual, assertFailure, testCase)
+import Test.Tasty.HUnit (assertEqual, assertFailure, testCase)
 
 import Control.Monad.Except (MonadIO (liftIO))
-import Control.Monad.Trans.Resource (runResourceT)
-import Data.Either (isLeft)
-import System.IO.Temp (withSystemTempDirectory)
-
-import Lume.Core.Block (genesisBlock, hashBlock, initialBits)
+import Lume.Core.Block (blockHash, genesisBlock, initialBits)
 import Lume.Core.Time.Timestamp (Timestamp (..))
 import Lume.Core.Transaction (Coin (..))
 import Lume.Mocks (mockAddress1)
 import Lume.Node.Storage
+import System.IO.Temp (withSystemTempDirectory)
 
 nodeStorageDatabaseTests :: TestTree
 nodeStorageDatabaseTests =
@@ -24,78 +20,82 @@ nodeStorageDatabaseTests =
     "Storage.Database"
     [ testCase "should store and get BlockModel" $
         withSystemTempDirectory "database-test" $ \dir ->
-          runResourceT $ do
-            let config = defaultDatabaseConfig{_dbBasePath = dir}
-                blockHash = hashBlock genesisBlock
+          runDatabase $ do
+            let blockHash' = blockHash genesisBlock
                 blockModel =
                   BlockModel
-                    { _brVersion = 1
-                    , _brHeight = 42
-                    , _brStatus = BlockStatusValid
-                    , _brTxCount = 3
-                    , _brFile = 0
-                    , _brDataPos = 100
-                    , _brMerkleRoot = blockHash
-                    , _brTimestamp = Timestamp 999
-                    , _brBits = initialBits
-                    , _brNonce = 7
+                    { bmVersion = 1
+                    , bmHeight = 42
+                    , bmStatus = BlockStatusValid
+                    , bmTxCount = 3
+                    , bmFile = 0
+                    , bmDataPos = 100
+                    , bmMerkleRoot = blockHash'
+                    , bmTimestamp = Timestamp 999
+                    , bmBits = initialBits
+                    , bmNonce = 7
                     }
-            db <- openDatabase @'BlockContext config "blocks"
-            putBlock db blockHash blockModel
-            result <- getBlock db blockHash
+            db <- openBlockDB dir
+            putBlock db blockHash' blockModel
+            result <- getBlock db blockHash'
             case result of
               Left err ->
                 liftIO $ assertFailure $ "getBlock failed unexpectedly: " <> show err
-              Right retrievedModel ->
+              Right (Just retrievedModel) ->
                 liftIO $ assertEqual "BlockModel" blockModel retrievedModel
+              Right Nothing -> liftIO $ assertFailure "Expected to find BlockModel, but got Nothing"
     , testCase "should store and get FileInfoModel" $
         withSystemTempDirectory "dbtest" $ \dir ->
-          runResourceT $ do
-            let config = defaultDatabaseConfig{_dbBasePath = dir}
-                idx = 123
-                fileInfoModel = FileInfoModel{_fiBlockCount = 10, _fiFileSize = 2048}
-            db <- openDatabase @'BlockContext config "blocks"
+          runDatabase $ do
+            let idx = 123
+                fileInfoModel = FileInfoModel{fiBlockCount = 10, fiFileSize = 2048}
+            db <- openBlockDB dir
             putFileInfo db idx fileInfoModel
             result <- getFileInfo db idx
             case result of
               Left err ->
                 liftIO $ assertFailure $ "getFileInfo failed unexpectedly: " <> show err
-              Right retrievedModel ->
+              Right Nothing -> liftIO $ assertFailure "Expected to find FileInfoModel, but got Nothing"
+              Right (Just retrievedModel) ->
                 liftIO $ assertEqual "FileInfoModel" fileInfoModel retrievedModel
     , testCase "should store and get last block file index" $
         withSystemTempDirectory "dbtest" $ \dir ->
-          runResourceT $ do
-            let config = defaultDatabaseConfig{_dbBasePath = dir}
-            db <- openDatabase @'BlockContext config "blocks"
+          runDatabase $ do
+            db <- openBlockDB dir
             putLastBlockFile db 123
             result <- getLastBlockFile db
             case result of
               Left err ->
                 liftIO $ assertFailure $ "getLastBlockFile failed unexpectedly: " <> show err
-              Right retrievedIndex ->
+              Right Nothing -> liftIO $ assertFailure "Expected to find last block file index, but got Nothing"
+              Right (Just retrievedIndex) ->
                 liftIO $ assertEqual "last block file index" 123 retrievedIndex
     , testCase "should store, get and delete UTXOModel" $
         withSystemTempDirectory "dbtest" $ \dir ->
-          runResourceT $ do
-            let config = defaultDatabaseConfig{_dbBasePath = dir}
-                txHash = hashBlock genesisBlock
+          runDatabase $ do
+            let txHash = blockHash genesisBlock
                 utxo =
                   UTXOModel
-                    { _urIsCoinbase = False
-                    , _urValue = Coin 5000
-                    , _uIdx = 1
-                    , _urOwner = mockAddress1
-                    , _urHeight = 7
+                    { umIsCoinbase = False
+                    , umValue = Coin 5000
+                    , umIdx = 1
+                    , umOwner = mockAddress1
+                    , umHeight = 7
                     }
-            db <- openDatabase @'ChainStateContext config "chainstate"
+            db <- openChainStateDB dir
             putUtxo db txHash 1 utxo
             getResult <- getUtxo db txHash 1
             case getResult of
               Left err ->
                 liftIO $ assertFailure $ "getUtxo failed unexpectedly: " <> show err
-              Right retrievedUtxo ->
+              Right (Just retrievedUtxo) ->
                 liftIO $ assertEqual "UTXOModel" utxo retrievedUtxo
+              Right Nothing -> liftIO $ assertFailure "Expected to find UTXOModel, but got Nothing"
             deleteUtxo db txHash 1
             deleteResult <- getUtxo db txHash 1
-            liftIO $ assertBool "UTXO should not exist after deletion" (isLeft deleteResult)
+            case deleteResult of
+              Left err ->
+                liftIO $ assertFailure $ "getUtxo after delete failed unexpectedly: " <> show err
+              Right Nothing -> pure ()
+              Right (Just _) -> liftIO $ assertFailure "Expected to not find UTXOModel after deletion"
     ]

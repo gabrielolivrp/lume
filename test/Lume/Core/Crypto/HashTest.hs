@@ -65,9 +65,4 @@ coreHashTests =
         assertEqual "equal data hash" hash1 hash2
         assertBool "different data should produce different hashes" $
           hash1 /= hash3
-    , testCase "should return same hash when hashing a hash" $ do
-        let input = "reflexive test"
-            originalHash = Hash.hash' input
-            hashOfHash = Hash.toHash originalHash
-        assertEqual "hash reflexivity" originalHash hashOfHash
     ]

@@ -5,7 +5,6 @@ module Lume.Wallet.Transaction.Signer where
 
 import Control.Lens
 import Control.Monad (when)
-import Control.Monad.Except (MonadError (throwError))
 import Data.ByteString qualified as BS
 import Data.Foldable (find)
 import Data.List.NonEmpty qualified as NE
@@ -23,17 +22,17 @@ data SignTransactionError
   | SignTransactionMissingInputError TxIn
   deriving (Show, Eq)
 
-signTx :: (MonadError SignTransactionError m) => Tx -> NE.NonEmpty SigTxIn -> m Tx
+signTx :: Tx -> NE.NonEmpty SigTxIn -> Either SignTransactionError Tx
 signTx tx sigins = do
-  when (isCoinbase tx) (throwError SignTransactionCoinbaseNotAllowedError)
-  let hash = Hash.toRawBytes . hashTx $ tx
+  when (isCoinbase tx) (Left SignTransactionCoinbaseNotAllowedError)
+  let hash = Hash.toRawBytes . txHash $ tx
   txins' <- mapM (go hash) (tx ^. txIn)
-  pure (tx & txIn .~ txins')
+  Right (tx & txIn .~ txins')
  where
-  go txHash txin =
+  go hash txin =
     case findSig txin sigins of
-      Just sig -> pure $ signTxIn txin txHash (sigPrivKey sig)
-      Nothing -> throwError (SignTransactionMissingInputError txin)
+      Just sig -> Right $ signTxIn txin hash (sigPrivKey sig)
+      Nothing -> Left (SignTransactionMissingInputError txin)
 
   findSig txin = find (\sig -> txin ^. txInPrevOut == sigOutpoint sig)
 

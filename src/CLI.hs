@@ -1,4 +1,5 @@
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 
 module CLI where
 
@@ -7,27 +8,52 @@ import Lume.Node qualified as Node
 import Lume.Wallet qualified as Wallet
 import Options.Applicative
 
+defaultNodeConfigPath :: FilePath
+defaultNodeConfigPath = "node.config.json"
+{-# INLINE defaultNodeConfigPath #-}
+
+defaultWalletConfigPath :: FilePath
+defaultWalletConfigPath = "node.config.json"
+{-# INLINE defaultWalletConfigPath #-}
+
 data Command
   = Node NodeCmd
   | Wallet WalletCmd
   deriving (Eq)
 
 data NodeCmd
-  = StartNode
-  { nodeConfigPath :: FilePath
-  }
+  = CreateBlockchain
+      { nodeConfigPath :: FilePath
+      }
+  | StartNode
+      { nodeConfigPath :: FilePath
+      }
   deriving (Eq)
 
 data WalletCmd
-  = ListAddresses
-  | CreateWallet {walletName :: String}
-  | GetWalletInfo {walletName :: String}
-  | SendTransaction {walletName :: String, to :: String, amount :: Natural}
+  = ListAddresses {walletConfigPath :: FilePath}
+  | CreateWallet {walletName :: String, walletConfigPath :: FilePath}
+  | GetWalletInfo {walletName :: String, walletConfigPath :: FilePath}
+  | SendTransaction {walletName :: String, to :: String, amount :: Natural, walletConfigPath :: FilePath}
   deriving (Eq)
 
 nodeCommands :: Parser NodeCmd
-nodeCommands = hsubparser startCommand
+nodeCommands = hsubparser (createChainCommand <> startCommand)
  where
+  createChainCommand =
+    command
+      "createblockchain"
+      ( info
+          ( CreateBlockchain
+              <$> strArgument
+                ( metavar "CONFIG_PATH"
+                    <> help "Path to the node configuration file"
+                    <> value defaultNodeConfigPath
+                )
+          )
+          (progDesc "Initialize a new blockchain using the specified configuration")
+      )
+
   startCommand =
     command
       "start"
@@ -36,9 +62,10 @@ nodeCommands = hsubparser startCommand
               <$> strArgument
                 ( metavar "CONFIG_PATH"
                     <> help "Path to the node configuration file"
+                    <> value defaultNodeConfigPath
                 )
           )
-          (progDesc "Start the blockchain node")
+          (progDesc "Start the blockchain node with the provided configuration")
       )
 
 walletCommands :: Parser WalletCmd
@@ -50,10 +77,16 @@ walletCommands = hsubparser (createCommand <> infoCommand <> listCommand <> send
       ( info
           ( CreateWallet
               <$> strArgument
-                ( metavar "WALLET_NAME" <> help "Name of the wallet to create"
+                ( metavar "WALLET_NAME"
+                    <> help "Name for the new wallet"
+                )
+              <*> strArgument
+                ( metavar "CONFIG_PATH"
+                    <> help "Path to the wallet configuration file"
+                    <> value defaultWalletConfigPath
                 )
           )
-          (progDesc "Create a new wallet")
+          (progDesc "Create a new wallet with the specified name")
       )
 
   infoCommand =
@@ -62,18 +95,30 @@ walletCommands = hsubparser (createCommand <> infoCommand <> listCommand <> send
       ( info
           ( GetWalletInfo
               <$> strArgument
-                ( metavar "WALLET_NAME" <> help "Name of the wallet to get info about"
+                ( metavar "WALLET_NAME"
+                    <> help "Name of the wallet to retrieve information about"
+                )
+              <*> strArgument
+                ( metavar "CONFIG_PATH"
+                    <> help "Path to the wallet configuration file"
+                    <> value defaultWalletConfigPath
                 )
           )
-          (progDesc "Get information about a specific wallet")
+          (progDesc "Display detailed information about a specific wallet")
       )
 
   listCommand =
     command
       "list"
       ( info
-          (pure ListAddresses)
-          (progDesc "List all addresses in the wallet")
+          ( ListAddresses
+              <$> strArgument
+                ( metavar "CONFIG_PATH"
+                    <> help "Path to the wallet configuration file"
+                    <> value defaultWalletConfigPath
+                )
+          )
+          (progDesc "List all wallets and their associated addresses")
       )
 
   sendTxCommand =
@@ -82,18 +127,26 @@ walletCommands = hsubparser (createCommand <> infoCommand <> listCommand <> send
       ( info
           ( SendTransaction
               <$> strArgument
-                ( metavar "WALLET_NAME" <> help "Name of the wallet to send from"
+                ( metavar "WALLET_NAME"
+                    <> help "Name of the wallet to send coins from"
                 )
               <*> strArgument
-                ( metavar "TO_ADDRESS" <> help "Address to send the transaction to"
+                ( metavar "TO_ADDRESS"
+                    <> help "Destination address for the transaction"
                 )
-              <*> argument
+              <*> option
                 auto
                 ( metavar "AMOUNT"
-                    <> help "Amount to send in the transaction (in smallest unit)"
+                    <> help "Amount of coins to send"
+                    <> value 0
+                )
+              <*> strArgument
+                ( metavar "CONFIG_PATH"
+                    <> help "Path to the wallet configuration file"
+                    <> value defaultWalletConfigPath
                 )
           )
-          (progDesc "Send a transaction to a specified address")
+          (progDesc "Send coins from the specified wallet to a recipient address")
       )
 
 commands :: Parser Command
@@ -103,13 +156,13 @@ commands =
         "node"
         ( info
             (Node <$> nodeCommands)
-            (progDesc "Operations to the blockchain node")
+            (progDesc "Blockchain node operations")
         )
         <> command
           "wallet"
           ( info
               (Wallet <$> walletCommands)
-              (progDesc "Operations to the wallet management")
+              (progDesc "Wallet management operations")
           )
     )
 
@@ -125,22 +178,21 @@ parseCLI = execParser opts
       )
 
 handleWallet :: WalletCmd -> IO ()
-handleWallet (SendTransaction walletName' to' amount') =
-  Wallet.sendTransactionCommand (Wallet.mkWalletName walletName') to' amount'
-handleWallet (CreateWallet walletName') =
-  Wallet.newWalletCommand (Wallet.mkWalletName walletName')
-handleWallet (GetWalletInfo walletName') =
-  Wallet.getWalletInfoCommand (Wallet.mkWalletName walletName')
-handleWallet ListAddresses = Wallet.listAddressesCommand
+handleWallet (SendTransaction walletName' to' amount' configPath) =
+  Wallet.sendTransactionCommand configPath (Wallet.mkWalletName walletName') to' amount'
+handleWallet (CreateWallet walletName' configPath) =
+  Wallet.newWalletCommand configPath (Wallet.mkWalletName walletName')
+handleWallet (GetWalletInfo walletName' configPath) =
+  Wallet.getWalletInfoCommand configPath (Wallet.mkWalletName walletName')
+handleWallet (ListAddresses configPath) = Wallet.listAddressesCommand configPath
 
 handleNode :: NodeCmd -> IO ()
+handleNode (CreateBlockchain configPath) = Node.createBlockchainCommand configPath
 handleNode (StartNode configPath) = Node.startNodeCommand configPath
 
-handle :: Command -> IO ()
-handle (Node nodeCmd) = handleNode nodeCmd
-handle (Wallet walletCmd) = handleWallet walletCmd
-
 run :: IO ()
-run = do
-  cmd <- parseCLI
-  handle cmd
+run =
+  parseCLI
+    >>= \case
+      Node nodeCmd -> handleNode nodeCmd
+      Wallet walletCmd -> handleWallet walletCmd

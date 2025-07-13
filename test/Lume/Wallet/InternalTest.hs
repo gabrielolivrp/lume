@@ -17,22 +17,21 @@ walletInternalTests :: TestTree
 walletInternalTests =
   testGroup
     "Internal"
-    [ testCase "should create a new wallet with a valid address and correct name" $
-        withSystemTempDirectory "wallet-internal-test" $ \dir -> do
-          let testWalletName = mkWalletName "testWallet"
-          result <- runExceptT $ newWallet dir testWalletName
-          case result of
-            Left err -> assertFailure $ "Failed to create wallet: " ++ show err
-            Right wallet -> do
-              let Wallet name _ _ (Addr.Address addr) = wallet
-              assertEqual "Wallet name should match" testWalletName name
-              assertBool "Address should not be empty" (not $ T.null addr)
+    [ testCase "should create a new wallet with a valid address and correct name" $ do
+        let testWalletName = mkWalletName "testWallet"
+        result <- runExceptT $ newWallet testWalletName
+        case result of
+          Left err -> assertFailure $ "Failed to create wallet: " ++ show err
+          Right wallet -> do
+            let Wallet name _ _ (Addr.Address addr) = wallet
+            assertEqual "Wallet name should match" testWalletName name
+            assertBool "Address should not be empty" (not $ T.null addr)
     , testCase "should store and load a wallet correctly using WalletStorage" $
         withSystemTempDirectory "wallet-internal-test" $ \dir -> do
           let testWalletName = mkWalletName "testWallet"
           _ <-
             runExceptT $
-              newWallet dir testWalletName >>= \wallet -> do
+              newWallet testWalletName >>= \wallet -> do
                 walletStorage <- mkWalletStorage dir testWalletName
                 store walletStorage wallet
                 loaded <- load walletStorage
@@ -44,7 +43,7 @@ walletInternalTests =
         withSystemTempDirectory "wallet-internal-test" $ \dir -> do
           let testWalletName = mkWalletName "testWallet"
           _ <- runExceptT $ do
-            wallet <- newWallet dir testWalletName
+            wallet <- newWallet testWalletName
             walletStorage <- mkWalletStorage dir testWalletName
             store walletStorage wallet
 
@@ -71,11 +70,11 @@ walletInternalTests =
                 walletName2 = mkWalletName "w2"
 
             -- Create wallets
-            wallet1 <- newWallet dir walletName1
+            wallet1 <- newWallet walletName1
             walletStorage1 <- mkWalletStorage dir walletName1
             store walletStorage1 wallet1
 
-            wallet2 <- newWallet dir walletName2
+            wallet2 <- newWallet walletName2
             walletStorage2 <- mkWalletStorage dir walletName2
             store walletStorage2 wallet1
 

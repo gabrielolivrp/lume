@@ -29,16 +29,24 @@ library
     , Lume.Node
     , Lume.Node.Config
     , Lume.Node.Command
+    , Lume.Node.Mempool
+    , Lume.Node.Chain
     , Lume.Node.Miner
     , Lume.Node.Miner.PoW
     , Lume.Node.Storage
     , Lume.Node.Storage.Database
+    , Lume.Node.Storage.Database.Internal
+    , Lume.Node.Storage.Database.Block
+    , Lume.Node.Storage.Database.Chainstate
     , Lume.Node.Storage.FileStorage
     , Lume.Node.Network
     , Lume.Node.Network.State
     , Lume.Node.Network.P2P
-    , Lume.Node.Network.Types
+    , Lume.Node.Network.Peer
+    , Lume.Node.Network.Message
+    , Lume.Node.Network.RPC
     , Lume.Wallet
+    , Lume.Wallet.Config
     , Lume.Wallet.Storage.Database
     , Lume.Wallet.Transaction
     , Lume.Wallet.Transaction.Builder
@@ -67,11 +75,16 @@ library
     , mtl
     , transformers
     , leveldb-haskell
+    , resourcet
+    , unliftio
     , directory
     , filepath
     , optparse-applicative
     , sqlite-simple
     , aeson
+    , wai
+    , warp
+    , http-types
   default-language: Haskell2010
 
 executable lume
@@ -98,6 +111,7 @@ test-suite lume-test
     , Lume.Core.Crypto.AddressTest
     , Lume.Core.Crypto.SignatureTest
     , Lume.Core.Crypto.MerkleTreeTest
+    , Lume.Node.ChainTest
     , Lume.Node.Miner.PoWTest
     , Lume.Node.Storage.DatabaseTest
     , Lume.Node.Storage.FileStorageTest
@@ -120,6 +134,5 @@ test-suite lume-test
     , mtl
     , transformers
     , temporary
-    , resourcet
     , directory
     , filepath

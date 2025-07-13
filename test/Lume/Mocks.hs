@@ -8,7 +8,7 @@ import Data.List.NonEmpty qualified as NE
 import Data.Map qualified as M
 import Data.Text qualified as Text
 import Data.Word (Word32, Word64)
-import Lume.Core.Block (Bits, Block (..), BlockHeader (..), genesisBlock, hashBlock, initialBits)
+import Lume.Core.Block (Bits, Block (..), BlockHeader (..), blockHash, genesisBlock, initialBits)
 import Lume.Core.Crypto.Address (Address (..))
 import Lume.Core.Crypto.Hash (Hash, ToHash (toHash), hash')
 import Lume.Core.Crypto.Signature qualified as Sig
@@ -90,10 +90,10 @@ mockTxOut2 = TxOut mockAddress2 2000
 mockTxOut3 :: TxOut
 mockTxOut3 = TxOut mockAddress3 3000
 
-mockTxIn :: Hash -> Word64 -> Sig.Signature -> Sig.PublicKey -> TxIn
-mockTxIn txHash idx sig pubKey =
+mockTxIn :: Hash -> Word32 -> Sig.Signature -> Sig.PublicKey -> TxIn
+mockTxIn hash idx sig pubKey =
   TxIn
-    { _txInPrevOut = Outpoint txHash idx
+    { _txInPrevOut = Outpoint hash idx
     , _txInSignature = sig
     , _txInPubKey = pubKey
     }
@@ -127,7 +127,7 @@ mockCoinbaseTx version outputs =
 mockCoinbase :: Tx
 mockCoinbase = mockCoinbaseTx 1 [TxOut mockAddress1 5000]
 
-mockOutpoint :: Tx -> Word64 -> Outpoint
+mockOutpoint :: Tx -> Word32 -> Outpoint
 mockOutpoint tx = Outpoint (toHash tx)
 
 mockOutpointTx1 :: Outpoint
@@ -136,7 +136,7 @@ mockOutpointTx1 = mockOutpoint mockTx1 0
 ---------------
 -- Mock UTXOs
 ---------------
-mockUTXO :: Hash -> Word64 -> Address -> Coin -> UTXO
+mockUTXO :: Hash -> Word32 -> Address -> Coin -> UTXO
 mockUTXO txId idx addr val =
   UTXO
     { _utxoTxId = txId
@@ -192,7 +192,7 @@ mockBlockHeader1 =
     , _bMerkleRoot = mockHash1
     , _bTimestamp = mockTimestamp1
     , _bBits = initialBits
-    , _bHashPrevBlock = hashBlock genesisBlock
+    , _bHashPrevBlock = blockHash genesisBlock
     }
 
 mockBlock1 :: Block

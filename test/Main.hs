@@ -6,11 +6,12 @@ import Lume.Core.Crypto.AddressTest (coreAddressTests)
 import Lume.Core.Crypto.HashTest (coreHashTests)
 import Lume.Core.Crypto.MerkleTreeTest (coreMerkleTreeTests)
 import Lume.Core.Crypto.SignatureTest (coreSignatureTests)
+import Lume.Node.ChainTest (nodeChainTests)
 import Lume.Node.Miner.PoWTest (nodeMinerPoWTests)
 import Lume.Node.Storage.DatabaseTest (nodeStorageDatabaseTests)
 import Lume.Node.Storage.FileStorageTest (nodeStorageFileStorageTests)
-import Lume.Wallet.Storage.DatabaseTest (walletStorageDatabaseTests)
 import Lume.Wallet.InternalTest (walletInternalTests)
+import Lume.Wallet.Storage.DatabaseTest (walletStorageDatabaseTests)
 import Lume.Wallet.Transaction.BuilderTest (walletTransactionBuilderTests)
 import Lume.Wallet.Transaction.SignerTest (walletSignerTests)
 
@@ -33,6 +34,7 @@ nodeTests =
     [ nodeMinerPoWTests
     , nodeStorageDatabaseTests
     , nodeStorageFileStorageTests
+    , nodeChainTests
     ]
 
 walletTests :: TestTree

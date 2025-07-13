@@ -29,7 +29,7 @@ import Database.SQLite.Simple.ToField (ToField (toField))
 import Lume.Core.Crypto.Hash qualified as Hash
 
 data DatabaseError
-  = DatabaseError T.Text
+  = DatabaseError String
   deriving (Show, Eq)
 
 newtype Database = Database
@@ -67,8 +67,15 @@ openDatabase path = do
     execute_ conn utxoSchema
     pure conn
   case result of
-    Left (e :: SomeException) -> throwError . DatabaseError . T.pack $ show e
+    Left (e :: SomeException) -> throwError . DatabaseError $ show e
     Right conn -> pure $ Database conn
+
+withQuery :: (DatabaseM m) => Database -> (Connection -> IO a) -> m a
+withQuery db action = do
+  result <- liftIO . try $ action (dbConn db)
+  case result of
+    Left (e :: SomeException) -> throwError . DatabaseError $ show e
+    Right res -> pure res
 
 -------------------
 -- Database Models
@@ -135,42 +142,29 @@ instance FromRow UTXOModel where
       <*> field
 
 storeWallet :: (DatabaseM m) => Database -> WalletModel -> m ()
-storeWallet db wm = do
+storeWallet db wm =
   let q = "INSERT OR REPLACE INTO wallet (id, name, public_key, private_key, address) VALUES (1, ?, ?, ?, ?)"
-  result <- liftIO . try $ execute (dbConn db) q wm
-  case result of
-    Left (e :: SomeException) -> throwError . DatabaseError . T.pack $ show e
-    Right _ -> return ()
+   in withQuery db $ \conn -> execute conn q wm
 
 loadWallet :: (DatabaseM m) => Database -> m (Maybe WalletModel)
 loadWallet db = do
   let q = "SELECT name, public_key, private_key, address FROM wallet WHERE id = 1"
-  result <- liftIO . try $ query_ (dbConn db) q
+  result <- withQuery db (`query_` q)
   case result of
-    Left (e :: SomeException) -> throwError . DatabaseError . T.pack $ show e
-    Right [] -> return Nothing
-    Right (wm : _) -> return $ Just wm
+    [] -> pure Nothing
+    (wm : _) -> pure $ Just wm
 
 storeUTXO :: (DatabaseM m) => Database -> UTXOModel -> m ()
-storeUTXO db utxo = do
+storeUTXO db utxo =
   let q = "INSERT OR REPLACE INTO utxos (tx_id, output_index, address, amount, spent) VALUES (?, ?, ?, ?, ?)"
-  result <- liftIO . try $ execute (dbConn db) q utxo
-  case result of
-    Left (e :: SomeException) -> throwError . DatabaseError . T.pack $ show e
-    Right _ -> return ()
+   in withQuery db $ \conn -> execute conn q utxo
 
 markUTXOAsSpent :: (DatabaseM m) => Database -> Hash.Hash -> Word64 -> m ()
-markUTXOAsSpent db txid outIdx = do
+markUTXOAsSpent db txid outIdx =
   let q = "UPDATE utxos SET spent = 1 WHERE tx_id = ? AND output_index = ?"
-  result <- liftIO . try $ execute (dbConn db) q (toField $ Hash.toHex txid, toField outIdx)
-  case result of
-    Left (e :: SomeException) -> throwError . DatabaseError . T.pack $ show e
-    Right _ -> return ()
+   in withQuery db $ \conn -> execute conn q (toField $ Hash.toHex txid, toField outIdx)
 
 getUTXOs :: (DatabaseM m) => Database -> m [UTXOModel]
-getUTXOs db = do
+getUTXOs db =
   let q = "SELECT tx_id, output_index, address, amount, spent FROM utxos WHERE spent = 0"
-  result <- liftIO . try $ query_ (dbConn db) q
-  case result of
-    Left (e :: SomeException) -> throwError . DatabaseError . T.pack $ show e
-    Right utxos -> return utxos
+   in withQuery db (`query_` q)

@@ -18,6 +18,7 @@ module Lume.Core.Crypto.Address (
 where
 
 import Codec.Binary.Bech32
+import Data.Aeson (ToJSON (toJSON))
 import Data.Binary (Binary (get, put))
 import Data.Text (Text)
 import GHC.Generics (Generic)
@@ -36,6 +37,9 @@ newtype Address = Address Text
 instance Binary Address where
   put (Address addr) = put addr
   get = Address <$> get
+
+instance ToJSON Address where
+  toJSON (Address addr) = toJSON addr
 
 prefix :: Text
 prefix = "lume_addr_"

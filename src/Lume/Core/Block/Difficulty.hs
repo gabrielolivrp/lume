@@ -16,9 +16,12 @@ module Lume.Core.Block.Difficulty (
   toTarget,
   fromTarget,
   adjustDifficulty,
+  expectedRetargetInterval,
+  blocksPerRetarget,
 )
 where
 
+import Data.Aeson
 import Data.Binary
 import Data.Bits qualified as B
 import GHC.Generics (Generic)
@@ -31,6 +34,9 @@ instance Binary Bits where
   put (Bits bits) = put bits
   get = Bits <$> get
 
+instance ToJSON Bits where
+  toJSON (Bits bits) = toJSON bits
+
 newtype Target = Target Integer
   deriving (Show, Eq, Ord, Generic)
   deriving newtype (Num, Real, Integral, Enum)
@@ -40,12 +46,21 @@ instance Binary Target where
   get = Target <$> get
 
 initialBits :: Bits
-initialBits = Bits 0x1d00ffff
+initialBits = Bits 0x1e00ffff
 {-# INLINE initialBits #-}
 
 maximumTarget :: Target
 maximumTarget = Target 0x00000000FFFF0000000000000000000000000000000000000000000000000000
 {-# INLINE maximumTarget #-}
+
+blocksPerRetarget :: Word32
+blocksPerRetarget = 2016
+
+expectedRetargetInterval :: Timestamp
+expectedRetargetInterval = Timestamp (blockIntervalSeconds * blocksPerRetarget)
+ where
+  blockIntervalSeconds :: Word32
+  blockIntervalSeconds = 60 -- 1 minute per block
 
 toTarget :: Bits -> Target
 toTarget (Bits bits) =
@@ -79,12 +94,12 @@ fromTarget (Target target)
     | c B..&. 0x00800000 /= 0 = (c `B.shiftR` 8, e + 1)
     | otherwise = (c, e)
 
-adjustDifficulty :: Bits -> Timestamp -> Timestamp -> Bits
-adjustDifficulty currentBits (Timestamp actualTimeSeconds) (Timestamp expectedTimeSeconds) =
+adjustDifficulty :: Bits -> Timestamp -> Bits
+adjustDifficulty currentBits (Timestamp actualTimespan) =
   let
     currentTarget = toTarget currentBits
 
-    timeRatio = toRational actualTimeSeconds / toRational expectedTimeSeconds
+    timeRatio = toRational actualTimespan / toRational expectedRetargetInterval
 
     boundedRatio = max 0.25 (min timeRatio 4.0)
     newTargetFloat = toRational currentTarget * boundedRatio

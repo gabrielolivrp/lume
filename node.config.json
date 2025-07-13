@@ -6,5 +6,10 @@
   "mining": {
     "enabled": true,
     "coinbase_address": "..."
+  },
+  "rpc": {
+    "enabled": true,
+    "host": "127.0.0.1",
+    "port": 8332
   }
 }

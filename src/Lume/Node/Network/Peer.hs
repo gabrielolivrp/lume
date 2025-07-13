@@ -2,7 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 
-module Lume.Node.Network.Types where
+module Lume.Node.Network.Peer where
 
 import Control.Distributed.Process (NodeId)
 import Data.Binary (Binary)

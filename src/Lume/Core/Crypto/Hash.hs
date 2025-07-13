@@ -2,8 +2,10 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Lume.Core.Crypto.Hash (
   -- * Types
@@ -21,11 +23,13 @@ module Lume.Core.Crypto.Hash (
 where
 
 import Crypto.Hash (Digest, SHA256, digestFromByteString, hash)
+import Data.Aeson (ToJSON (toJSON))
 import Data.Binary (Binary (get, put), Get, encode)
 import Data.Bits (Bits (shiftL, (.|.)))
 import Data.ByteArray (convert)
 import Data.ByteArray.Encoding qualified as BAE
 import Data.ByteString qualified as BS
+import Data.ByteString.Char8 qualified as Char8
 import GHC.Generics (Generic)
 
 class ToHash a where
@@ -43,11 +47,14 @@ instance Binary Hash where
   get = do
     bs <- get :: Get BS.ByteString
     case digestFromByteString bs of
-      Just d -> return (Hash d)
+      Just d -> pure (Hash d)
       Nothing -> fail "Invalid SHA256 digest"
 
+instance ToJSON Hash where
+  toJSON h = toJSON (Char8.unpack $ toHex h)
+
 instance ToHash Hash where
-  toHash = id
+  toHash = hash' . toRawBytes
 
 instance ToHash BS.ByteString
 
@@ -74,6 +81,6 @@ fromRawBytes bs = Hash <$> digestFromByteString bs
 {-# INLINE fromRawBytes #-}
 
 hash2Integer :: Hash -> Integer
-hash2Integer (Hash digest) = BS.foldl' step 0 (convert digest)
+hash2Integer (Hash digest) = BS.foldr step 0 (convert digest)
  where
-  step acc byte = acc `shiftL` 8 .|. fromIntegral byte
+  step byte acc = fromIntegral byte .|. (acc `shiftL` 8)
