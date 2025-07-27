@@ -13,7 +13,7 @@ defaultNodeConfigPath = "node.config.json"
 {-# INLINE defaultNodeConfigPath #-}
 
 defaultWalletConfigPath :: FilePath
-defaultWalletConfigPath = "node.config.json"
+defaultWalletConfigPath = "wallet.config.json"
 {-# INLINE defaultWalletConfigPath #-}
 
 data Command
