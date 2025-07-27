@@ -28,7 +28,13 @@ data TxBuilderError
   | WalletNoUnspentOutputsError
   | WalletInvalidTransactionValueError Text
   | WalletInvalidTransactionFeeError Text
-  deriving (Show, Eq)
+  deriving (Eq)
+
+instance Show TxBuilderError where
+  show WalletInsufficientFundsError = "Insufficient funds to complete the transaction."
+  show WalletNoUnspentOutputsError = "No unspent outputs available to create a transaction."
+  show (WalletInvalidTransactionValueError msg) = "Invalid transaction value: " ++ show msg
+  show (WalletInvalidTransactionFeeError msg) = "Invalid transaction fee: " ++ show msg
 
 data BuildUnsignedTxParams = BuildUnsignedTxParams
   { _sender :: Address

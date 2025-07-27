@@ -22,19 +22,28 @@ data Command
   deriving (Eq)
 
 data NodeCmd
-  = CreateBlockchain
-      { nodeConfigPath :: FilePath
-      }
-  | StartNode
-      { nodeConfigPath :: FilePath
-      }
+  = CreateBlockchain {nodeConfigPath :: FilePath}
+  | StartNode {nodeConfigPath :: FilePath}
   deriving (Eq)
 
 data WalletCmd
-  = ListAddresses {walletConfigPath :: FilePath}
-  | CreateWallet {walletName :: String, walletConfigPath :: FilePath}
-  | GetWalletInfo {walletName :: String, walletConfigPath :: FilePath}
-  | SendTransaction {walletName :: String, to :: String, amount :: Natural, walletConfigPath :: FilePath}
+  = ListAddresses
+      { walletConfigPath :: FilePath
+      }
+  | CreateWallet
+      { walletName :: String
+      , walletConfigPath :: FilePath
+      }
+  | GetWalletInfo
+      { walletName :: String
+      , walletConfigPath :: FilePath
+      }
+  | SendTransaction
+      { walletName :: String
+      , to :: String
+      , amount :: Natural
+      , walletConfigPath :: FilePath
+      }
   deriving (Eq)
 
 nodeCommands :: Parser NodeCmd
@@ -49,6 +58,7 @@ nodeCommands = hsubparser (createChainCommand <> startCommand)
                 ( metavar "CONFIG_PATH"
                     <> help "Path to the node configuration file"
                     <> value defaultNodeConfigPath
+                    <> showDefault
                 )
           )
           (progDesc "Initialize a new blockchain using the specified configuration")
@@ -63,6 +73,7 @@ nodeCommands = hsubparser (createChainCommand <> startCommand)
                 ( metavar "CONFIG_PATH"
                     <> help "Path to the node configuration file"
                     <> value defaultNodeConfigPath
+                    <> showDefault
                 )
           )
           (progDesc "Start the blockchain node with the provided configuration")
@@ -84,6 +95,7 @@ walletCommands = hsubparser (createCommand <> infoCommand <> listCommand <> send
                 ( metavar "CONFIG_PATH"
                     <> help "Path to the wallet configuration file"
                     <> value defaultWalletConfigPath
+                    <> showDefault
                 )
           )
           (progDesc "Create a new wallet with the specified name")
@@ -102,6 +114,7 @@ walletCommands = hsubparser (createCommand <> infoCommand <> listCommand <> send
                 ( metavar "CONFIG_PATH"
                     <> help "Path to the wallet configuration file"
                     <> value defaultWalletConfigPath
+                    <> showDefault
                 )
           )
           (progDesc "Display detailed information about a specific wallet")
@@ -116,6 +129,7 @@ walletCommands = hsubparser (createCommand <> infoCommand <> listCommand <> send
                 ( metavar "CONFIG_PATH"
                     <> help "Path to the wallet configuration file"
                     <> value defaultWalletConfigPath
+                    <> showDefault
                 )
           )
           (progDesc "List all wallets and their associated addresses")
@@ -134,16 +148,16 @@ walletCommands = hsubparser (createCommand <> infoCommand <> listCommand <> send
                 ( metavar "TO_ADDRESS"
                     <> help "Destination address for the transaction"
                 )
-              <*> option
+              <*> argument
                 auto
                 ( metavar "AMOUNT"
                     <> help "Amount of coins to send"
-                    <> value 0
                 )
               <*> strArgument
                 ( metavar "CONFIG_PATH"
                     <> help "Path to the wallet configuration file"
                     <> value defaultWalletConfigPath
+                    <> showDefault
                 )
           )
           (progDesc "Send coins from the specified wallet to a recipient address")

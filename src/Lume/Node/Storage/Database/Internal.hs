@@ -17,7 +17,7 @@ module Lume.Node.Storage.Database.Internal (
   dbPut,
   dbGet,
   dbDelete,
-  runDatabase,
+  runDatabaseM,
 ) where
 
 import Control.Monad.Trans.Resource (ResourceT)
@@ -87,5 +87,5 @@ dbDelete ::
   m ()
 dbDelete inst = LevelDB.delete (dbInst inst) LevelDB.defaultWriteOptions
 
-runDatabase :: (MonadUnliftIO m) => ResourceT m a -> m a
-runDatabase = LevelDB.runResourceT
+runDatabaseM :: (MonadUnliftIO m) => ResourceT m a -> m a
+runDatabaseM = LevelDB.runResourceT

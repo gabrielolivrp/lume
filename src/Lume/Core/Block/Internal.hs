@@ -71,23 +71,26 @@ data BlockHeader = BlockHeader
   -- ^ Timestamp of block creation
   , _bBits :: !Bits
   -- ^ Compact target for the PoW problem
+  , _bHeight :: !Word64
+  -- ^ Block height in the chain
   }
   deriving (Eq, Show, Generic)
   deriving anyclass (Hash.ToHash)
 
 instance Binary BlockHeader where
-  put (BlockHeader version nonce mroot hashPrev timestamp bits) = do
+  put (BlockHeader version nonce mroot hashPrev timestamp bits height) = do
     put version
     put nonce
     put mroot
     put hashPrev
     put timestamp
     put bits
+    put height
 
-  get = BlockHeader <$> get <*> get <*> get <*> get <*> get <*> get
+  get = BlockHeader <$> get <*> get <*> get <*> get <*> get <*> get <*> get
 
 instance ToJSON BlockHeader where
-  toJSON (BlockHeader version nonce mroot hashPrev timestamp bits) =
+  toJSON (BlockHeader version nonce mroot hashPrev timestamp bits height) =
     object
       [ "version" .= version
       , "nonce" .= nonce
@@ -95,6 +98,7 @@ instance ToJSON BlockHeader where
       , "previous_block_hash" .= hashPrev
       , "timestamp" .= timestamp
       , "bits" .= bits
+      , "height" .= height
       ]
 
 makeLenses ''BlockHeader
@@ -102,27 +106,23 @@ makeLenses ''BlockHeader
 data Block = Block
   { _bHeader :: !BlockHeader
   -- ^ Block header
-  , _bHeight :: !Word64
-  -- ^ Block height in the chain
   , _bTxs :: !Txs
   -- ^ Transactions in the block
   }
   deriving (Eq, Show, Generic)
 
 instance ToJSON Block where
-  toJSON (Block header height txs) =
+  toJSON (Block header txs) =
     object
       [ "header" .= header
-      , "height" .= height
-      , "tx" .= txs
+      , "transactions" .= txs
       ]
 
 instance Binary Block where
-  put (Block header height txs) = do
+  put (Block header txs) = do
     put header
-    put height
     put txs
-  get = Block <$> get <*> get <*> get
+  get = Block <$> get <*> get
 
 makeLenses ''Block
 
@@ -151,14 +151,14 @@ buildBlockHeader prevBlock bits mroot timestamp =
     , _bTimestamp = timestamp
     , _bBits = bits
     , _bHashPrevBlock = blockHash prevBlock
+    , _bHeight = (prevBlock ^. bHeader . bHeight) + 1
     }
 
 buildBlock :: Block -> Bits -> Timestamp -> Txs -> Block
 buildBlock prevBlock bits timestamp txs =
   let mroot = computeMerkleRoot txs
       blockHeader = buildBlockHeader prevBlock bits mroot timestamp
-      blockHeight = (prevBlock ^. bHeight) + 1
-   in Block blockHeader blockHeight txs
+   in Block blockHeader txs
 
 -----------------
 -- Genesis block
@@ -195,10 +195,10 @@ genesisBlock =
           , _bHashPrevBlock = genesisHashPrev
           , _bTimestamp = genesisTimestamp
           , _bBits = initialBits
+          , _bHeight = 0
           }
-      height = 0
       txs = Txs (NE.singleton genesisCoinbase)
-   in Block header height txs
+   in Block header txs
 
 ----------------------------
 -- Block Validations
@@ -222,8 +222,8 @@ validateMerkleRoot expectedRoot txs
 
 validateBlockIndex :: Block -> Block -> Either BlockError ()
 validateBlockIndex prevBlock block =
-  let expectedHeight = prevBlock ^. bHeight + 1
-   in when (block ^. bHeight /= expectedHeight) $ Left BlockInvalidHeightError
+  let expectedHeight = prevBlock ^. bHeader . bHeight + 1
+   in when (block ^. bHeader . bHeight /= expectedHeight) $ Left BlockInvalidHeightError
 {-# INLINE validateBlockIndex #-}
 
 validatePrevBlockHash :: Block -> Block -> Either BlockError ()

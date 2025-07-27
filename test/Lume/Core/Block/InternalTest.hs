@@ -5,7 +5,7 @@ module Lume.Core.Block.InternalTest where
 
 import Control.Lens
 import Data.List.NonEmpty qualified as NE
-import Lume.Core.Block (bHeight, bTxs, buildBlock, genesisBlock, initialBits)
+import Lume.Core.Block (bHeader, bHeight, bTxs, buildBlock, genesisBlock, initialBits)
 import Lume.Core.Time.Timestamp (Timestamp (..))
 import Lume.Core.Transaction (Txs (..))
 import Lume.Mocks
@@ -20,6 +20,6 @@ nodeBlockInternalTests =
         let timestamp = Timestamp 123456
             txs = Txs $ NE.singleton mockTx1
             newBlock = buildBlock genesisBlock initialBits timestamp txs
-        assertEqual "new block height" 1 (newBlock ^. bHeight)
+        assertEqual "new block height" 1 (newBlock ^. bHeader . bHeight)
         assertEqual "new block transactions" txs (newBlock ^. bTxs)
     ]

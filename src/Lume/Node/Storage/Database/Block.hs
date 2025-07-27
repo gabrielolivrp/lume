@@ -91,19 +91,13 @@ instance Binary FileInfoModel where
     put fileSize
   get = FileInfoModel <$> get <*> get
 
-data BlockDifficultyModel = BlockDifficultyModel
-  { biHash :: Hash
-  , biBits :: Bits
-  , biTimestamp :: Timestamp
+newtype HeightToHashModel = HeightToHashModel
+  { hhHash :: Hash
   }
 
-instance Binary BlockDifficultyModel where
-  put (BlockDifficultyModel hash bits timestamp) = do
-    put hash
-    put bits
-    put timestamp
-
-  get = BlockDifficultyModel <$> get <*> get <*> get
+instance Binary HeightToHashModel where
+  put (HeightToHashModel hash) = put hash
+  get = HeightToHashModel <$> get
 
 mkBlockKey :: Hash -> BS.ByteString
 mkBlockKey h = "b" <> toRawBytes h
@@ -143,23 +137,23 @@ getFileInfo ::
   m (Either DatabaseError (Maybe FileInfoModel))
 getFileInfo db fileIndex = dbGet db (mkFileInfoKey fileIndex)
 
-mkBlockDifficultyKey :: Word64 -> BS.ByteString
-mkBlockDifficultyKey h = "h" <> Char8.pack (show h)
+mkHeightToHashKey :: Word64 -> BS.ByteString
+mkHeightToHashKey h = "h" <> Char8.pack (show h)
 
-putBlockDifficulty ::
+putHeightToHash ::
   (DatabaseM m) =>
   BlockDatabase ->
   Word64 ->
-  BlockDifficultyModel ->
+  HeightToHashModel ->
   m ()
-putBlockDifficulty db h = dbPut db (mkBlockDifficultyKey h)
+putHeightToHash db h = dbPut db (mkHeightToHashKey h)
 
-getBlockDifficulty ::
+getHeightToHash ::
   (DatabaseM m) =>
   BlockDatabase ->
   Word64 ->
-  m (Either DatabaseError (Maybe BlockDifficultyModel))
-getBlockDifficulty db h = dbGet db (mkBlockDifficultyKey h)
+  m (Either DatabaseError (Maybe HeightToHashModel))
+getHeightToHash db h = dbGet db (mkHeightToHashKey h)
 
 lastBlockFileKey :: BS.ByteString
 lastBlockFileKey = "l"
@@ -182,7 +176,7 @@ toBlockModel :: Block -> BlockStatus -> FS.BlockPosition -> FS.FileIndex -> Bloc
 toBlockModel block status position fileIndex =
   BlockModel
     { bmVersion = block ^. (bHeader . bVersion)
-    , bmHeight = block ^. bHeight
+    , bmHeight = block ^. bHeader . bHeight
     , bmStatus = status
     , bmTxCount = fromIntegral $ NE.length (getTxs $ block ^. bTxs)
     , bmFile = fileIndex

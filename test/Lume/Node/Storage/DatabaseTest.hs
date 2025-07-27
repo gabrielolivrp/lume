@@ -20,7 +20,7 @@ nodeStorageDatabaseTests =
     "Storage.Database"
     [ testCase "should store and get BlockModel" $
         withSystemTempDirectory "database-test" $ \dir ->
-          runDatabase $ do
+          runDatabaseM $ do
             let blockHash' = blockHash genesisBlock
                 blockModel =
                   BlockModel
@@ -46,7 +46,7 @@ nodeStorageDatabaseTests =
               Right Nothing -> liftIO $ assertFailure "Expected to find BlockModel, but got Nothing"
     , testCase "should store and get FileInfoModel" $
         withSystemTempDirectory "dbtest" $ \dir ->
-          runDatabase $ do
+          runDatabaseM $ do
             let idx = 123
                 fileInfoModel = FileInfoModel{fiBlockCount = 10, fiFileSize = 2048}
             db <- openBlockDB dir
@@ -60,7 +60,7 @@ nodeStorageDatabaseTests =
                 liftIO $ assertEqual "FileInfoModel" fileInfoModel retrievedModel
     , testCase "should store and get last block file index" $
         withSystemTempDirectory "dbtest" $ \dir ->
-          runDatabase $ do
+          runDatabaseM $ do
             db <- openBlockDB dir
             putLastBlockFile db 123
             result <- getLastBlockFile db
@@ -72,7 +72,7 @@ nodeStorageDatabaseTests =
                 liftIO $ assertEqual "last block file index" 123 retrievedIndex
     , testCase "should store, get and delete UTXOModel" $
         withSystemTempDirectory "dbtest" $ \dir ->
-          runDatabase $ do
+          runDatabaseM $ do
             let txHash = blockHash genesisBlock
                 utxo =
                   UTXOModel

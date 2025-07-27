@@ -165,8 +165,8 @@ mockBasicUtxoSet = mockUtxoSet [utxo1, utxo2, utxo3]
 ----------------
 -- Mock Blocks
 ----------------
-mockBlockHeader :: Word32 -> Word32 -> Hash -> Hash -> Timestamp -> Bits -> BlockHeader
-mockBlockHeader version nonce merkleRoot prevHash timestamp bits =
+mockBlockHeader :: Word32 -> Word32 -> Hash -> Hash -> Timestamp -> Bits -> Word64 -> BlockHeader
+mockBlockHeader version nonce merkleRoot prevHash timestamp bits height =
   BlockHeader
     { _bVersion = version
     , _bNonce = nonce
@@ -174,13 +174,13 @@ mockBlockHeader version nonce merkleRoot prevHash timestamp bits =
     , _bHashPrevBlock = prevHash
     , _bTimestamp = timestamp
     , _bBits = bits
+    , _bHeight = height
     }
 
-mockBlock :: BlockHeader -> Word64 -> [Tx] -> Block
-mockBlock header height txs =
+mockBlock :: BlockHeader -> [Tx] -> Block
+mockBlock header txs =
   Block
     { _bHeader = header
-    , _bHeight = height
     , _bTxs = Txs (NE.fromList txs)
     }
 
@@ -193,12 +193,12 @@ mockBlockHeader1 =
     , _bTimestamp = mockTimestamp1
     , _bBits = initialBits
     , _bHashPrevBlock = blockHash genesisBlock
+    , _bHeight = 1
     }
 
 mockBlock1 :: Block
 mockBlock1 =
   Block
     { _bHeader = mockBlockHeader1
-    , _bHeight = 1
     , _bTxs = Txs $ NE.fromList [mockTx1, mockTx2]
     }

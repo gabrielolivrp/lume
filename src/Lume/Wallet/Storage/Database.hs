@@ -8,6 +8,7 @@ module Lume.Wallet.Storage.Database (
   Database,
   DatabaseError (..),
   openDatabase,
+  runDatabaseM,
   storeWallet,
   loadWallet,
   storeUTXO,
@@ -19,7 +20,7 @@ module Lume.Wallet.Storage.Database (
 where
 
 import Control.Exception (SomeException, try)
-import Control.Monad.Except (MonadError, throwError)
+import Control.Monad.Except (ExceptT, MonadError, throwError)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.ByteString qualified as BS
 import Data.Text qualified as T
@@ -33,10 +34,17 @@ data DatabaseError
   deriving (Show, Eq)
 
 newtype Database = Database
-  { dbConn :: Connection
+  { getConn :: Connection
   }
 
 type DatabaseM m = (MonadIO m, MonadError DatabaseError m)
+
+runDatabaseM :: (MonadIO m) => Database -> IO a -> ExceptT DatabaseError m a
+runDatabaseM _ io = do
+  result <- liftIO $ try io
+  case result of
+    Left e -> throwError $ DatabaseError (show (e :: SomeException))
+    Right a -> pure a
 
 walletSchema :: Query
 walletSchema =
@@ -72,7 +80,7 @@ openDatabase path = do
 
 withQuery :: (DatabaseM m) => Database -> (Connection -> IO a) -> m a
 withQuery db action = do
-  result <- liftIO . try $ action (dbConn db)
+  result <- liftIO . try $ action (getConn db)
   case result of
     Left (e :: SomeException) -> throwError . DatabaseError $ show e
     Right res -> pure res

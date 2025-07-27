@@ -1,5 +1,5 @@
 {
-  "data_dir": ".lume_wallet",
+  "data_dir": ".lume",
   "rpc": {
     "host": "127.0.0.1",
     "port": 8332

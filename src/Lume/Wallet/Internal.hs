@@ -1,6 +1,7 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ImportQualifiedPost #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -9,20 +10,25 @@ module Lume.Wallet.Internal (
   WalletName,
   getWalletName,
   Wallet (..),
-  WalletStorage (..),
   WalletError (..),
-  mkWalletName,
-  mkWalletStorage,
+  withWallet,
+  storeWallet,
+  loadWallet,
+  storeUTXO,
+  markUTXOAsSpent,
+  getUTXOs,
   newWallet,
   checkWalletExists,
   loadAllWallets,
   sendTransaction,
-  runWalletM,
+  mkWalletName,
 )
 where
 
 import Control.Exception (SomeException, try)
-import Control.Monad.Except (ExceptT, MonadError, MonadIO (liftIO), runExceptT, throwError)
+import Control.Monad.Except (ExceptT, runExceptT, throwError, withExceptT)
+import Control.Monad.Reader
+import Data.Either (partitionEithers)
 import Data.List (isPrefixOf)
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (catMaybes)
@@ -33,6 +39,7 @@ import Lume.Core.Crypto.Address qualified as Addr
 import Lume.Core.Crypto.Hash qualified as Hash
 import Lume.Core.Crypto.Signature qualified as Sig
 import Lume.Core.Transaction (Coin, Outpoint (Outpoint), UTXO (UTXO))
+import Lume.Wallet.Config (Config (cDataDir))
 import Lume.Wallet.Storage.Database qualified as DB
 import Lume.Wallet.Transaction (SigTxIn (SigTxIn), signTx)
 import Lume.Wallet.Transaction.Builder (BuildUnsignedTxParams (BuildUnsignedTxParams), TxBuilderError, buildUnsignedTx)
@@ -70,20 +77,12 @@ instance Show WalletError where
   show (WalletTransactionBuilderError builderErr) =
     "Failed to construct transaction:\n→ " ++ show builderErr
 
-type WalletM m = (MonadIO m, MonadError WalletError m)
-
-data WalletStorage = WalletStorage
-  { store :: forall m. (WalletM m) => Wallet -> m ()
-  -- ^ Store a wallet
-  , load :: forall m. (WalletM m) => m (Maybe Wallet)
-  -- ^ Load a wallet from storage
-  , storeUTXO :: forall m. (WalletM m) => UTXO -> m ()
-  -- ^ Store a UTXO in the wallet storage
-  , markUTXOAsSpent :: forall m. (WalletM m) => Hash.Hash -> Word64 -> m ()
-  -- ^ Mark a UTXO as spent in the wallet storage
-  , getUTXOs :: forall m. (WalletM m) => m [UTXO]
-  -- ^ Get all UTXOs from the wallet storage
+data WalletContext = WalletContext
+  { wcWalletName :: WalletName
+  , wcDatabase :: DB.Database
   }
+
+type WalletM m a = (MonadIO m) => ReaderT WalletContext (ExceptT WalletError m) a
 
 mkWalletName :: String -> WalletName
 mkWalletName name = WalletName (T.pack name)
@@ -91,65 +90,62 @@ mkWalletName name = WalletName (T.pack name)
 mkWalletPath :: FilePath -> WalletName -> FilePath
 mkWalletPath basePath walletName = basePath </> "wallets" </> "wallet_" <> T.unpack (getWalletName walletName)
 
-mkWalletStorage :: (WalletM m) => FilePath -> WalletName -> m WalletStorage
-mkWalletStorage basePath walletName = do
-  let walletPath = mkWalletPath basePath walletName
-  -- Create the wallet directory if it doesn't exist
-  liftIO $ createDirectoryIfMissing True walletPath
+mkContext :: (MonadIO m) => Config -> WalletName -> ExceptT WalletError m WalletContext
+mkContext config walletName = do
+  let walletPath = mkWalletPath (cDataDir config) walletName
+  database <-
+    withExceptT WalletDatabaseError $
+      DB.openDatabase (walletPath </> "wallet.db")
+  pure $ WalletContext walletName database
 
-  database <- liftDB $ DB.openDatabase (walletPath </> "wallet.db")
-  pure $
-    WalletStorage
-      { store = storeWallet' database
-      , load = loadWallet' database
-      , storeUTXO = storeUTXO' database
-      , markUTXOAsSpent = markUTXOAsSpent' database
-      , getUTXOs = getUTXOs' database
-      }
+withWallet :: (MonadIO m) => Config -> WalletName -> WalletM m a -> m (Either WalletError a)
+withWallet config name action = do
+  runExceptT $ do
+    ctx <- mkContext config name
+    runReaderT action ctx
 
-checkWalletExists :: (WalletM m) => FilePath -> WalletName -> m Bool
-checkWalletExists basePath walletName = do
-  let walletPath = mkWalletPath basePath walletName
-  liftIO $ doesDirectoryExist walletPath
+liftDB :: (MonadTrans t, Monad m) => ExceptT DB.DatabaseError m a -> t (ExceptT WalletError m) a
+liftDB action = lift $ withExceptT WalletDatabaseError action
 
-newWallet :: (MonadIO m, MonadError WalletError m) => WalletName -> m Wallet
-newWallet walletName = do
-  result <- liftIO . try $ Sig.generateKeyPair
-  case result of
-    Left (e :: SomeException) -> throwError . WalletCryptoError $ "Failed to generate key pair: " <> show e
-    Right (Sig.KeyPair (pk, sk)) -> do
-      address <- case Addr.fromPublicKey pk of
-        Left e -> throwError . WalletCryptoError $ "Failed to generate address from public key: " <> show e
-        Right address' -> pure address'
-      pure $ Wallet walletName sk pk address
+storeWallet :: Wallet -> WalletM m ()
+storeWallet (Wallet walletName privKey pubKey (Addr.Address addr)) = do
+  database <- asks wcDatabase
+  liftDB $
+    DB.storeWallet database $
+      DB.WalletModel
+        { DB.wmName = getWalletName walletName
+        , DB.wmPublicKey = Sig.toRawBytes pubKey
+        , DB.wmPrivateKey = Sig.toRawBytes privKey
+        , DB.wmAddress = addr
+        }
 
-storeWallet' :: (WalletM m) => DB.Database -> Wallet -> m ()
-storeWallet' database (Wallet walletName privKey pubKey (Addr.Address addr)) = do
-  let wm =
-        DB.WalletModel
-          { DB.wmName = getWalletName walletName
-          , DB.wmPublicKey = Sig.toRawBytes pubKey
-          , DB.wmPrivateKey = Sig.toRawBytes privKey
-          , DB.wmAddress = addr
-          }
-  liftDB (DB.storeWallet database wm)
-
-loadWallet' :: (WalletM m) => DB.Database -> m (Maybe Wallet)
-loadWallet' database = do
-  wm <- liftDB $ DB.loadWallet database
-  case wm of
+loadWallet :: WalletM m (Maybe Wallet)
+loadWallet = do
+  database <- asks wcDatabase
+  walletModel <- liftDB $ DB.loadWallet database
+  case walletModel of
     Nothing -> pure Nothing
-    Just wm' -> do
-      pubKey <- maybe (throwError $ WalletCryptoError "Invalid public key format") pure $ Sig.fromRawBytes (DB.wmPublicKey wm')
-      privKey <- maybe (throwError $ WalletCryptoError "Invalid private key format") pure $ Sig.fromRawBytes (DB.wmPrivateKey wm')
-      let address = Addr.Address (DB.wmAddress wm')
-          name = WalletName (DB.wmName wm')
-          wallet = Wallet name privKey pubKey address
-      pure (Just wallet)
+    Just walletModel' -> do
+      privKey <- parseSk (DB.wmPrivateKey walletModel')
+      pubKey <- parsePk (DB.wmPublicKey walletModel')
+      pure . Just $
+        Wallet
+          { wName = WalletName (DB.wmName walletModel')
+          , wAddr = Addr.Address (DB.wmAddress walletModel')
+          , wPrivKey = privKey
+          , wPubKey = pubKey
+          }
+ where
+  parsePk pk = maybe (throwError $ WalletCryptoError "Invalid public key format") pure $ Sig.fromRawBytes pk
+  parseSk sk = maybe (throwError $ WalletCryptoError "Invalid private key format") pure $ Sig.fromRawBytes sk
 
-storeUTXO' :: (WalletM m) => DB.Database -> UTXO -> m ()
-storeUTXO' database (UTXO txId idx (Addr.Address addr) value) = do
-  let um =
+storeUTXO :: UTXO -> WalletM m ()
+storeUTXO (UTXO txId idx (Addr.Address addr) value) = do
+  database <- asks wcDatabase
+  lift $
+    withExceptT WalletDatabaseError $
+      DB.storeUTXO
+        database
         DB.UTXOModel
           { DB.umTxId = Hash.toHex txId
           , DB.umOutIdx = fromIntegral idx
@@ -157,13 +153,15 @@ storeUTXO' database (UTXO txId idx (Addr.Address addr) value) = do
           , DB.umAmount = fromIntegral value
           , DB.umSpent = False
           }
-  liftDB (DB.storeUTXO database um)
 
-markUTXOAsSpent' :: (WalletM m) => DB.Database -> Hash.Hash -> Word64 -> m ()
-markUTXOAsSpent' database txId outIdx = liftDB $ DB.markUTXOAsSpent database txId outIdx
+markUTXOAsSpent :: Hash.Hash -> Word64 -> WalletM m ()
+markUTXOAsSpent txId outIdx = do
+  database <- asks wcDatabase
+  liftDB $ DB.markUTXOAsSpent database txId outIdx
 
-getUTXOs' :: (WalletM m) => DB.Database -> m [UTXO]
-getUTXOs' database = do
+getUTXOs :: WalletM m [UTXO]
+getUTXOs = do
+  database <- asks wcDatabase
   utxos <- liftDB $ DB.getUTXOs database
   mapM toUTXO utxos
  where
@@ -176,47 +174,54 @@ getUTXOs' database = do
         value = fromIntegral (DB.umAmount um)
     pure (UTXO txId idx addr value)
 
-loadAllWallets :: (WalletM m) => FilePath -> m [Wallet]
-loadAllWallets basePath = do
-  walletFiles <- liftIO $ getDirectoryContents (basePath </> "wallets")
-  let walletNames = filter (isPrefixOf "wallet_") walletFiles
-  wallets <-
-    mapM
-      ( \name -> do
-          let walletName = drop 7 name
-          walletStorage <- mkWalletStorage basePath (WalletName $ T.pack walletName)
-          load walletStorage
-      )
-      walletNames
-  pure $ catMaybes wallets
-
-sendTransaction :: (WalletM m) => Wallet -> WalletStorage -> Address -> Coin -> m ()
-sendTransaction wallet walletStorage to' amount' = do
-  -- Get UTXOs from the wallet storage
-  utxos <- getUTXOs walletStorage
-
+sendTransaction :: Address -> Coin -> WalletM m ()
+sendTransaction to' amount' = do
+  wallet <-
+    loadWallet >>= \case
+      Nothing -> asks wcWalletName >>= throwError . WalletNotFoundError
+      Just w -> pure w
+  utxos <- getUTXOs
   -- TODO: Implement fee calculation
   let params = BuildUnsignedTxParams (wAddr wallet) to' amount' 10000
-
-  -- Build the unsigned transaction
   let result = buildUnsignedTx utxos params
   case result of
     Left err -> throwError (WalletTransactionBuilderError err)
     Right unsignedTx -> do
-      -- Sign the transaction with the wallet's private key
       let sigTxIns = map (\(UTXO txId idx _ _) -> SigTxIn (Outpoint txId idx) (wPrivKey wallet)) utxos
-      -- Sign the transaction
       let signedTx = signTx unsignedTx (NE.fromList sigTxIns)
       case signedTx of
         Left err -> throwError . WalletCryptoError $ show err
         Right _signedTx -> pure ()
 
-liftDB :: (WalletM m) => ExceptT DB.DatabaseError IO a -> m a
-liftDB action = do
-  result <- liftIO $ runExceptT action
-  case result of
-    Left e -> throwError (WalletDatabaseError e)
-    Right a -> pure a
+newWallet :: Config -> WalletName -> IO (Either WalletError Wallet)
+newWallet config walletName = do
+  exists <- checkWalletExists (cDataDir config) walletName
+  if exists
+    then pure $ Left (WalletAlreadyExistsError walletName)
+    else do
+      let walletPath = mkWalletPath (cDataDir config) walletName
+      createDirectoryIfMissing True walletPath
+      result <- try Sig.generateKeyPair
+      case result of
+        Left (e :: SomeException) -> pure . Left . WalletCryptoError $ "Failed to generate key pair: " <> show e
+        Right (Sig.KeyPair (pk, sk)) ->
+          case Addr.fromPublicKey pk of
+            Left e -> pure . Left . WalletCryptoError $ "Failed to generate address from public key: " <> show e
+            Right address' -> pure . Right $ Wallet walletName sk pk address'
 
-runWalletM :: ExceptT e m a -> m (Either e a)
-runWalletM = runExceptT
+checkWalletExists :: FilePath -> WalletName -> IO Bool
+checkWalletExists basePath walletName = doesDirectoryExist (mkWalletPath basePath walletName)
+
+loadAllWallets :: Config -> IO (Either [WalletError] [Wallet])
+loadAllWallets config = do
+  let path = cDataDir config </> "wallets"
+  walletFiles <- getDirectoryContents path
+  let walletNames =
+        map (mkWalletName . drop 7)
+          . filter (isPrefixOf "wallet_")
+          $ walletFiles
+  results <- forM walletNames $ \name -> withWallet config name loadWallet
+  let (errors, mWallets) = partitionEithers results
+  if null errors
+    then pure $ Right (catMaybes mWallets)
+    else pure $ Left errors
