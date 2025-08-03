@@ -10,14 +10,14 @@ module Lume.Core.Transaction.Coin (
   maxCoin,
 ) where
 
-import Data.Aeson (ToJSON (toJSON))
+import Data.Aeson (FromJSON, ToJSON)
 import Data.Binary (Binary (get, put))
 import GHC.Generics (Generic)
 import GHC.Natural (Natural)
 import Text.Printf
 
 newtype Coin = Coin Natural
-  deriving stock (Eq, Ord, Generic)
+  deriving (Eq, Ord, Generic, ToJSON, FromJSON)
   deriving newtype (Num, Enum, Real, Integral)
 
 instance Binary Coin where
@@ -26,9 +26,6 @@ instance Binary Coin where
 
 instance Show Coin where
   show = format
-
-instance ToJSON Coin where
-  toJSON (Coin n) = toJSON n
 
 coin :: Coin
 coin = Coin 100000000 -- 1 Coin = 100,000,000

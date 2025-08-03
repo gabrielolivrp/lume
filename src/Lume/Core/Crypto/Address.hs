@@ -18,7 +18,7 @@ module Lume.Core.Crypto.Address (
 where
 
 import Codec.Binary.Bech32
-import Data.Aeson (ToJSON (toJSON))
+import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), withText)
 import Data.Binary (Binary (get, put))
 import Data.Text (Text)
 import GHC.Generics (Generic)
@@ -40,6 +40,12 @@ instance Binary Address where
 
 instance ToJSON Address where
   toJSON (Address addr) = toJSON addr
+
+instance FromJSON Address where
+  parseJSON = withText "Address" $ \t ->
+    case mkAddress t of
+      Left _ -> fail "Invalid address format"
+      Right addr -> pure addr
 
 prefix :: Text
 prefix = "lume_addr_"

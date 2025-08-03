@@ -28,14 +28,11 @@ import GHC.Generics (Generic)
 import Lume.Core.Time.Timestamp (Timestamp (Timestamp))
 
 newtype Bits = Bits Word32
-  deriving (Show, Eq, Ord, Generic)
+  deriving (Show, Eq, Ord, ToJSON, FromJSON, Generic)
 
 instance Binary Bits where
   put (Bits bits) = put bits
   get = Bits <$> get
-
-instance ToJSON Bits where
-  toJSON (Bits bits) = toJSON bits
 
 newtype Target = Target Integer
   deriving (Show, Eq, Ord, Generic)

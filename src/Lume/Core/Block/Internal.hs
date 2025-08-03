@@ -101,6 +101,17 @@ instance ToJSON BlockHeader where
       , "height" .= height
       ]
 
+instance FromJSON BlockHeader where
+  parseJSON = withObject "BlockHeader" $ \v ->
+    BlockHeader
+      <$> v .: "version"
+      <*> v .: "nonce"
+      <*> v .: "merkle_root"
+      <*> v .: "previous_block_hash"
+      <*> v .: "timestamp"
+      <*> v .: "bits"
+      <*> v .: "height"
+
 makeLenses ''BlockHeader
 
 data Block = Block
@@ -117,6 +128,12 @@ instance ToJSON Block where
       [ "header" .= header
       , "transactions" .= txs
       ]
+
+instance FromJSON Block where
+  parseJSON = withObject "Block" $ \v ->
+    Block
+      <$> v .: "header"
+      <*> v .: "transactions"
 
 instance Binary Block where
   put (Block header txs) = do

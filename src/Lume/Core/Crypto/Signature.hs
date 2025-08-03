@@ -28,6 +28,7 @@ import Data.ByteArray (convert)
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as B16
 import Data.ByteString.Char8 qualified as Char8
+import Data.Text.Encoding qualified as TE
 import GHC.Generics (Generic)
 
 class Key k where
@@ -47,6 +48,15 @@ instance Binary Signature where
 
 instance ToJSON Signature where
   toJSON (Signature sig) = toJSON $ toBase18' sig
+
+instance FromJSON Signature where
+  parseJSON = withText "Signature" $ \txt ->
+    let bs = TE.encodeUtf8 txt
+     in case B16.decode bs of
+          Right decoded
+            | BS.length decoded == Ed25519.signatureSize ->
+                pure (Signature decoded)
+          _ -> fail $ "Invalid signature format: " ++ show txt
 
 newtype PrivateKey = PrivateKey BS.ByteString
   deriving stock (Eq, Generic)
@@ -90,6 +100,15 @@ instance Key PublicKey where
 
 instance ToJSON PublicKey where
   toJSON (PublicKey pk) = toJSON $ toBase18' pk
+
+instance FromJSON PublicKey where
+  parseJSON = withText "PublicKey" $ \txt ->
+    let bs = TE.encodeUtf8 txt
+     in case B16.decode bs of
+          Right decoded
+            | BS.length decoded == Ed25519.publicKeySize ->
+                pure (PublicKey decoded)
+          _ -> fail $ "Invalid public key format: " ++ show txt
 
 newtype KeyPair = KeyPair (PublicKey, PrivateKey)
   deriving stock (Show, Eq, Generic)

@@ -23,13 +23,15 @@ module Lume.Core.Crypto.Hash (
 where
 
 import Crypto.Hash (Digest, SHA256, digestFromByteString, hash)
-import Data.Aeson (ToJSON (toJSON))
+import Data.Aeson (FromJSON, ToJSON (toJSON), withText)
+import Data.Aeson.Types (FromJSON (parseJSON))
 import Data.Binary (Binary (get, put), Get, encode)
 import Data.Bits (Bits (shiftL, (.|.)))
 import Data.ByteArray (convert)
 import Data.ByteArray.Encoding qualified as BAE
 import Data.ByteString qualified as BS
 import Data.ByteString.Char8 qualified as Char8
+import Data.Text.Encoding qualified as TE
 import GHC.Generics (Generic)
 
 class ToHash a where
@@ -52,6 +54,13 @@ instance Binary Hash where
 
 instance ToJSON Hash where
   toJSON h = toJSON (Char8.unpack $ toHex h)
+
+instance FromJSON Hash where
+  parseJSON = withText "Hash" $ \txt -> do
+    let bs = TE.encodeUtf8 txt
+    case fromHex bs of
+      Just decoded -> pure decoded
+      Nothing -> fail "Invalid hash format"
 
 instance ToHash Hash where
   toHash = hash' . toRawBytes

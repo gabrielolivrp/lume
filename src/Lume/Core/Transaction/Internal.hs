@@ -82,6 +82,12 @@ instance ToJSON Outpoint where
       , "idx" .= idx
       ]
 
+instance FromJSON Outpoint where
+  parseJSON = withObject "Outpoint" $ \v ->
+    Outpoint
+      <$> v .: "tx_id"
+      <*> v .: "idx"
+
 makeLenses ''Outpoint
 
 data TxIn = TxIn
@@ -111,6 +117,13 @@ instance ToJSON TxIn where
       , "pub_key" .= pubKey
       ]
 
+instance FromJSON TxIn where
+  parseJSON = withObject "TxIn" $ \v ->
+    TxIn
+      <$> v .: "prev_out"
+      <*> v .: "signature"
+      <*> v .: "pub_key"
+
 data TxOut = TxOut
   { _txOutAddress :: !Address
   -- ^ Address that will receive the funds
@@ -133,6 +146,12 @@ instance ToJSON TxOut where
       [ "address" .= address
       , "value" .= value
       ]
+
+instance FromJSON TxOut where
+  parseJSON = withObject "TxOut" $ \v ->
+    TxOut
+      <$> v .: "address"
+      <*> v .: "value"
 
 data Tx = Tx
   { _txIn :: ![TxIn]
@@ -160,6 +179,13 @@ instance ToJSON Tx where
       , "version" .= version
       ]
 
+instance FromJSON Tx where
+  parseJSON = withObject "Tx" $ \v ->
+    Tx
+      <$> v .: "inputs"
+      <*> v .: "outputs"
+      <*> v .: "version"
+
 makeLenses ''Tx
 
 newtype Txs = Txs {getTxs :: NE.NonEmpty Tx}
@@ -171,6 +197,13 @@ instance Binary Txs where
 
 instance ToJSON Txs where
   toJSON (Txs txs) = toJSON $ map toJSON (NE.toList txs)
+
+instance FromJSON Txs where
+  parseJSON = withArray "Txs" $ \arr -> do
+    txs <- mapM parseJSON (toList arr)
+    case NE.nonEmpty txs of
+      Just nonEmptyTxs -> pure (Txs nonEmptyTxs)
+      Nothing -> fail "Transaction list cannot be empty"
 
 makeLenses ''Txs
 
