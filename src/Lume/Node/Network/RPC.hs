@@ -5,6 +5,7 @@
 
 module Lume.Node.Network.RPC (startServer) where
 
+import Control.Applicative ((<|>))
 import Control.Lens hiding ((.=))
 import Control.Monad.Reader (MonadIO (liftIO))
 import Data.Aeson
@@ -83,6 +84,17 @@ instance ToJSON RPCResponse where
       , "error" .= err
       , "id" .= i
       ]
+data RPCWrapper a
+  = Single a
+  | Batch [a]
+  deriving (Show, Eq)
+
+instance (ToJSON a) => ToJSON (RPCWrapper a) where
+  toJSON (Single x) = toJSON x
+  toJSON (Batch xs) = toJSON xs
+
+instance (FromJSON a) => FromJSON (RPCWrapper a) where
+  parseJSON v = (Single <$> parseJSON v) <|> (Batch <$> parseJSON v)
 
 rpcVersion :: String
 rpcVersion = "2.0"
@@ -118,60 +130,60 @@ startServer config _state = do
       "POST" -> do
         result <-
           runChainM config (handleRequest req) >>= \case
-            Left err -> pure $ mkInternalRPCError 0 (show err) Nothing
+            Left err -> pure . Single $ mkInternalRPCError 0 (show err) Nothing
             Right resp -> pure resp
         respond $ responseLBS status200 [("Content-Type", "application/json")] (encode result)
       _ -> respond $ responseLBS status405 [("Content-Type", "text/plain")] "Method Not Allowed"
 
-handleRequest :: Request -> ChainM m RPCResponse
+handleRequest :: Request -> ChainM m (RPCWrapper RPCResponse)
 handleRequest req = do
   body <- liftIO $ getRequestBodyChunk req
-  let jsonBody = decode (BSL.fromStrict body) :: Maybe RPCRequest
+  let jsonBody = decode (BSL.fromStrict body) :: Maybe (RPCWrapper RPCRequest)
   case jsonBody of
-    Just (RPCRequest reqId method params _) -> do
-      response <- dispatch reqId method params
-      pure $ case response of
-        Just res -> res
-        Nothing -> mkErrorMethodNotFound reqId method Nothing
-    Nothing -> pure $ mkErrorInvalidRequest 0 "Invalid JSON-RPC request" Nothing
+    Just (Single (RPCRequest reqId method params _)) ->
+      Single <$> dispatch reqId method params
+    Just (Batch requests) ->
+      -- TODO: handle each request in parallel
+      Batch <$> mapM (\(RPCRequest reqId method params _) -> dispatch reqId method params) requests
+    Nothing -> pure . Single $ mkErrorInvalidRequest 0 "Invalid JSON-RPC request" Nothing
 
-withParsedParams :: (FromJSON a) => Value -> (a -> ChainM m (Maybe RPCResponse)) -> ChainM m (Maybe RPCResponse)
+withParsedParams :: (FromJSON a) => Value -> (a -> ChainM m RPCResponse) -> ChainM m RPCResponse
 withParsedParams params handler = case fromJSON params of
   Success values -> handler values
-  Error err -> pure . Just $ mkErrorInvalidParams 0 err Nothing
+  Error err -> pure $ mkErrorInvalidParams 0 err Nothing
 
-dispatch :: Int -> String -> Value -> ChainM m (Maybe RPCResponse)
+dispatch :: Int -> String -> Value -> ChainM m RPCResponse
 dispatch reqId method params =
   case method of
     "getblockcount" -> withParsedParams params $ \() -> handleGetBlockCount reqId
     "getblockhash" -> withParsedParams params $ \case
       [Number height] -> handleGetBlockHash reqId (round height)
-      _ -> pure . Just $ mkErrorInvalidParams reqId "Expected a single numeric parameter for block height" Nothing
+      _ -> pure $ mkErrorInvalidParams reqId "Expected a single numeric parameter for block height" Nothing
     "getblock" -> withParsedParams params $ \case
       [hash] -> handleGetBlock reqId hash
-      _ -> pure . Just $ mkErrorInvalidParams reqId "Expected a single string parameter for block hash" Nothing
-    _ -> pure Nothing
+      _ -> pure $ mkErrorInvalidParams reqId "Expected a single string parameter for block hash" Nothing
+    _ -> pure $ mkErrorMethodNotFound reqId method Nothing
 
-handleGetBlockCount :: Int -> ChainM m (Maybe RPCResponse)
+handleGetBlockCount :: Int -> ChainM m RPCResponse
 handleGetBlockCount reqId = do
   bestBlock <- getBestBlock
-  pure . Just $ case bestBlock of
+  pure $ case bestBlock of
     Nothing -> mkItemNotFound reqId "best block" Nothing
     Just blockModel -> mkSucess reqId (Number . fromIntegral $ blockModel ^. bHeader . bHeight)
 
-handleGetBlockHash :: Int -> Int -> ChainM m (Maybe RPCResponse)
+handleGetBlockHash :: Int -> Int -> ChainM m RPCResponse
 handleGetBlockHash reqId height = do
   block <- getBlockByHeight (fromIntegral height)
-  pure . Just $ case block of
+  pure $ case block of
     Nothing -> mkItemNotFound reqId "block" Nothing
     Just b -> mkSucess reqId (toJSON (blockHash b))
 
-handleGetBlock :: Int -> String -> ChainM m (Maybe RPCResponse)
+handleGetBlock :: Int -> String -> ChainM m RPCResponse
 handleGetBlock reqId bHash = do
   case fromHex (Char8.pack bHash) of
-    Nothing -> pure . Just $ mkErrorInvalidParams reqId "Invalid block hash" Nothing
+    Nothing -> pure $ mkErrorInvalidParams reqId "Invalid block hash" Nothing
     Just bHash' -> do
       block <- getBlockByHash bHash'
-      pure . Just $ case block of
+      pure $ case block of
         Nothing -> mkItemNotFound reqId "block" Nothing
         Just b -> mkSucess reqId (toJSON b)
