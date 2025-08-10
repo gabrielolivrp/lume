@@ -44,6 +44,9 @@ data WalletCmd
       , amount :: Natural
       , walletConfigPath :: FilePath
       }
+  | ScanFullUTXO
+      { walletConfigPath :: FilePath
+      }
   deriving (Eq)
 
 nodeCommands :: Parser NodeCmd
@@ -80,7 +83,7 @@ nodeCommands = hsubparser (createChainCommand <> startCommand)
       )
 
 walletCommands :: Parser WalletCmd
-walletCommands = hsubparser (createCommand <> infoCommand <> listCommand <> sendTxCommand)
+walletCommands = hsubparser (createCommand <> infoCommand <> listCommand <> sendTxCommand <> fullScan)
  where
   createCommand =
     command
@@ -163,6 +166,21 @@ walletCommands = hsubparser (createCommand <> infoCommand <> listCommand <> send
           (progDesc "Send coins from the specified wallet to a recipient address")
       )
 
+  fullScan =
+    command
+      "fullscan"
+      ( info
+          ( ScanFullUTXO
+              <$> strArgument
+                ( metavar "CONFIG_PATH"
+                    <> help "Path to the wallet configuration file"
+                    <> value defaultWalletConfigPath
+                    <> showDefault
+                )
+          )
+          (progDesc "Perform a full scan of UTXOs in the wallet")
+      )
+
 commands :: Parser Command
 commands =
   hsubparser
@@ -199,6 +217,7 @@ handleWallet (CreateWallet walletName' configPath) =
 handleWallet (GetWalletInfo walletName' configPath) =
   Wallet.getWalletInfoCommand configPath (Wallet.mkWalletName walletName')
 handleWallet (ListAddresses configPath) = Wallet.listAddressesCommand configPath
+handleWallet (ScanFullUTXO configPath) = Wallet.scanFullUTXOCommand configPath
 
 handleNode :: NodeCmd -> IO ()
 handleNode (CreateBlockchain configPath) = Node.createBlockchainCommand configPath

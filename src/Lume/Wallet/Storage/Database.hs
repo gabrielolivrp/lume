@@ -12,8 +12,9 @@ module Lume.Wallet.Storage.Database (
   storeWallet,
   loadWallet,
   storeUTXO,
-  markUTXOAsSpent,
+  spendUTXO,
   getUTXOs,
+  dropUTXOs,
   WalletModel (..),
   UTXOModel (..),
 )
@@ -24,7 +25,7 @@ import Control.Monad.Except (ExceptT, MonadError, throwError)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.ByteString qualified as BS
 import Data.Text qualified as T
-import Data.Word (Word64)
+import Data.Word (Word32)
 import Database.SQLite.Simple
 import Database.SQLite.Simple.ToField (ToField (toField))
 import Lume.Core.Crypto.Hash qualified as Hash
@@ -90,7 +91,7 @@ withQuery db action = do
 -------------------
 
 data WalletModel = WalletModel
-  { wmName :: T.Text
+  { wmName :: String
   -- ^ Name of the wallet
   , wmPublicKey :: BS.ByteString
   -- ^ Public key of the wallet
@@ -120,7 +121,7 @@ instance FromRow WalletModel where
 data UTXOModel = UTXOModel
   { umTxId :: BS.ByteString
   -- ^ Transaction ID
-  , umOutIdx :: Word64
+  , umOutIdx :: Word32
   -- ^ Output index in the transaction
   , umAddress :: T.Text
   -- ^ Address associated with the output
@@ -167,8 +168,8 @@ storeUTXO db utxo =
   let q = "INSERT OR REPLACE INTO utxos (tx_id, output_index, address, amount, spent) VALUES (?, ?, ?, ?, ?)"
    in withQuery db $ \conn -> execute conn q utxo
 
-markUTXOAsSpent :: (DatabaseM m) => Database -> Hash.Hash -> Word64 -> m ()
-markUTXOAsSpent db txid outIdx =
+spendUTXO :: (DatabaseM m) => Database -> Hash.Hash -> Word32 -> m ()
+spendUTXO db txid outIdx =
   let q = "UPDATE utxos SET spent = 1 WHERE tx_id = ? AND output_index = ?"
    in withQuery db $ \conn -> execute conn q (toField $ Hash.toHex txid, toField outIdx)
 
@@ -176,3 +177,8 @@ getUTXOs :: (DatabaseM m) => Database -> m [UTXOModel]
 getUTXOs db =
   let q = "SELECT tx_id, output_index, address, amount, spent FROM utxos WHERE spent = 0"
    in withQuery db (`query_` q)
+
+dropUTXOs :: (DatabaseM m) => Database -> m ()
+dropUTXOs db =
+  let q = "DELETE FROM utxos"
+   in withQuery db $ \conn -> execute_ conn q

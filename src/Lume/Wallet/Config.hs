@@ -34,3 +34,7 @@ parseConfig fp = do
   case decode configContent of
     Just config -> pure config
     Nothing -> fail $ "Failed to parse configuration file: " ++ fp
+
+mkRPCUrl :: Config -> String
+mkRPCUrl config = rpcHost (cRpc config) ++ ":" ++ show (rpcPort (cRpc config))
+{-# INLINE mkRPCUrl #-}

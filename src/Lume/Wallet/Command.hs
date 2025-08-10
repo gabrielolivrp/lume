@@ -69,7 +69,7 @@ sendTransactionCommand configPath walletName to amount = do
   config <- parseConfig configPath
   exists <- checkWalletExists (cDataDir config) walletName
   if not exists
-    then putStrLn $ "❌ Wallet '" ++ T.unpack (getWalletName walletName) ++ "' does not exist."
+    then putStrLn $ "❌ Wallet '" ++ getWalletName walletName ++ "' does not exist."
     else do
       result <- withWallet config walletName $ do
         case Addr.mkAddress (T.pack to) of
@@ -79,10 +79,20 @@ sendTransactionCommand configPath walletName to amount = do
             sendTransaction addr coin
       case result of
         Left err -> putStrLn $ "❌ Transaction failed: " ++ show err
-        Right _ -> putStrLn "✅ Transaction completed successfully!"
+        Right _ -> pure ()
+
+scanFullUTXOCommand :: FilePath -> IO ()
+scanFullUTXOCommand configPath = do
+  config <- parseConfig configPath
+  failures <- scanFullUTXO config
+  if null failures
+    then putStrLn "✅ Full UTXO scan completed successfully."
+    else do
+      putStrLn "❌ Full UTXO scan completed with errors:"
+      forM_ failures $ \err -> putStrLn $ "  - " ++ show err
 
 showWalletInfo :: Wallet -> IO ()
 showWalletInfo (Wallet walletName _ pubKey (Addr.Address addr)) = do
-  putStrLn $ "🧾 Wallet Name : " ++ T.unpack (getWalletName walletName)
+  putStrLn $ "🧾 Wallet Name : " ++ getWalletName walletName
   putStrLn $ "🔐 Public Key  : " ++ show pubKey
   putStrLn $ "🏦 Address     : " ++ T.unpack addr

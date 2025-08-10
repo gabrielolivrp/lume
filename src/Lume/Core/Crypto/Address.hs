@@ -32,7 +32,7 @@ data AddressError
   deriving (Show, Eq)
 
 newtype Address = Address Text
-  deriving stock (Show, Eq, Generic)
+  deriving stock (Show, Eq, Ord, Generic)
 
 instance Binary Address where
   put (Address addr) = put addr

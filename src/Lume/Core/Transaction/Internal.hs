@@ -40,6 +40,7 @@ module Lume.Core.Transaction.Internal (
 
   -- * Functions
   transactionVersion,
+  mkUTXO,
   isCoinbase,
   txHash,
   buildCoinbaseTx,
@@ -232,6 +233,16 @@ transactionVersion = 0x00000001
 isCoinbase :: Tx -> Bool
 isCoinbase tx = null (tx ^. txIn)
 {-# INLINE isCoinbase #-}
+
+mkUTXO :: Hash.Hash -> TxOut -> Word32 -> UTXO
+mkUTXO hash txOut' idx =
+  UTXO
+    { _utxoTxId = hash
+    , _utxoIdx = idx
+    , _utxoOwner = txOut' ^. txOutAddress
+    , _utxoValue = txOut' ^. txOutValue
+    }
+{-# INLINE mkUTXO #-}
 
 ------------------------
 -- Transaction builders

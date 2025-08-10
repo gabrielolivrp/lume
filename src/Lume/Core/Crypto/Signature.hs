@@ -79,7 +79,7 @@ instance Key PrivateKey where
   emptyKey = PrivateKey (BS.replicate Ed25519.secretKeySize 0)
 
 newtype PublicKey = PublicKey BS.ByteString
-  deriving stock (Eq, Generic)
+  deriving stock (Eq, Ord, Generic)
 
 instance Show PublicKey where
   show (PublicKey pk) = toBase18' pk
