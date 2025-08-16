@@ -1,0 +1,62 @@
+cabal-version:      3.0
+name:               lume-core
+version:            0.1.0.0
+build-type:         Simple
+
+common warnings
+  ghc-options: -Wall
+
+library
+  import: warnings
+  exposed-modules:
+    Lume.Core
+    , Lume.Core.Block
+    , Lume.Core.Block.Internal
+    , Lume.Core.Block.Difficulty
+    , Lume.Core.Transaction
+    , Lume.Core.Transaction.Coin
+    , Lume.Core.Transaction.Internal
+    , Lume.Core.Crypto.Hash
+    , Lume.Core.Crypto.Address
+    , Lume.Core.Crypto.Signature
+    , Lume.Core.Crypto.MerkleTree
+    , Lume.Core.Time.Timestamp
+  other-modules:
+  hs-source-dirs: src
+  build-depends:
+      base ^>=4.17.2.1
+    , bytestring
+    , text
+    , containers
+    , aeson
+    , lens
+    , binary
+    , crypton
+    , memory
+    , time
+    , base16-bytestring
+    , bech32
+  default-language: Haskell2010
+
+test-suite lume-core-test
+  import: warnings
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  other-modules:
+    , Lume.Core.Block.DifficultySpec
+    , Lume.Core.Block.InternalSpec
+    , Lume.Core.Crypto.HashSpec
+    , Lume.Core.Crypto.AddressSpec
+    , Lume.Core.Crypto.SignatureSpec
+    , Lume.Core.Crypto.MerkleTreeSpec
+  build-depends:
+      base
+    , lume-core
+    , tasty
+    , tasty-hunit
+    , text
+    , bytestring
+    , binary
+    , lens

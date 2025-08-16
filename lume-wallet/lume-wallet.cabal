@@ -1,0 +1,96 @@
+cabal-version:      3.0
+name:               lume-wallet
+version:            0.1.0.0
+build-type:         Simple
+
+common warnings
+  ghc-options: -Wall
+
+library
+  import: warnings
+  exposed-modules:
+      CLI
+    , Lume.Wallet
+    , Lume.Wallet.Config
+    , Lume.Wallet.Storage.Database
+    , Lume.Wallet.Transaction
+    , Lume.Wallet.Transaction.Builder
+    , Lume.Wallet.Transaction.CoinSelection
+    , Lume.Wallet.Transaction.Signer
+    , Lume.Wallet.Network.Node
+    , Lume.Wallet.Internal
+    , Lume.Wallet.Command
+  other-modules:
+  hs-source-dirs: src
+  build-depends:
+      base ^>=4.17.2.1
+    , lume-core
+    , bytestring
+    , text
+    , containers
+    , lens
+    , binary
+    , crypton
+    , memory
+    , network
+    , base16-bytestring
+    , network-transport
+    , network-transport-tcp
+    , distributed-process
+    , bech32
+    , time
+    , mtl
+    , transformers
+    , leveldb-haskell
+    , resourcet
+    , unliftio
+    , directory
+    , filepath
+    , optparse-applicative
+    , sqlite-simple
+    , aeson
+    , wai
+    , warp
+    , http-types
+    , http-client
+    , http-conduit
+  default-language: Haskell2010
+
+executable lume-wallet
+  import: warnings
+  main-is: Main.hs
+  other-modules:
+  hs-source-dirs: app
+  build-depends:
+      base
+    , lume-core
+    , lume-wallet
+  default-language: Haskell2010
+
+test-suite lume-wallet-test
+  import: warnings
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  other-modules:
+      Lume.Wallet.Storage.DatabaseSpec
+    , Lume.Wallet.Transaction.BuilderSpec
+    , Lume.Wallet.Transaction.SignerSpec
+    , Lume.Wallet.InternalSpec
+  build-depends:
+      base
+    , lume-core
+    , lume-wallet
+    , tasty
+    , tasty-hunit
+    , text
+    , bytestring
+    , binary
+    , lens
+    , containers
+    , mtl
+    , transformers
+    , temporary
+    , directory
+    , filepath

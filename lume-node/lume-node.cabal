@@ -1,0 +1,104 @@
+cabal-version:      3.0
+name:               lume-node
+version:            0.1.0.0
+build-type:         Simple
+
+common warnings
+  ghc-options: -Wall
+
+library
+  import: warnings
+  exposed-modules:
+      CLI
+    , Lume.Node
+    , Lume.Node.Config
+    , Lume.Node.Command
+    , Lume.Node.Mempool
+    , Lume.Node.Chain
+    , Lume.Node.Miner
+    , Lume.Node.Miner.PoW
+    , Lume.Node.Storage
+    , Lume.Node.Storage.Database
+    , Lume.Node.Storage.Database.Internal
+    , Lume.Node.Storage.Database.Block
+    , Lume.Node.Storage.Database.Chainstate
+    , Lume.Node.Storage.FileStorage
+    , Lume.Node.Network
+    , Lume.Node.Network.State
+    , Lume.Node.Network.P2P
+    , Lume.Node.Network.Peer
+    , Lume.Node.Network.Message
+    , Lume.Node.Network.RPC
+  other-modules:
+  hs-source-dirs: src
+  build-depends:
+      base ^>=4.17.2.1
+    , lume-core
+    , bytestring
+    , text
+    , containers
+    , lens
+    , binary
+    , crypton
+    , memory
+    , network
+    , base16-bytestring
+    , network-transport
+    , network-transport-tcp
+    , distributed-process
+    , bech32
+    , time
+    , mtl
+    , transformers
+    , leveldb-haskell
+    , resourcet
+    , unliftio
+    , directory
+    , filepath
+    , optparse-applicative
+    , sqlite-simple
+    , aeson
+    , wai
+    , warp
+    , http-types
+    , http-client
+    , http-conduit
+  default-language: Haskell2010
+
+executable lume-node
+  import: warnings
+  main-is: Main.hs
+  other-modules:
+  hs-source-dirs: app
+  build-depends:
+      base
+    , lume-core
+    , lume-node
+  default-language: Haskell2010
+
+test-suite lume-node-test
+  import: warnings
+  default-language: Haskell2010
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  other-modules:
+      Lume.Node.ChainSpec
+    , Lume.Node.Miner.PoWSpec
+    , Lume.Node.Storage.DatabaseSpec
+    , Lume.Node.Storage.FileStorageSpec
+  build-depends:
+      base
+    , lume-core
+    , lume-node
+    , tasty
+    , tasty-hunit
+    , bytestring
+    , lens
+    , text
+    , containers
+    , mtl
+    , transformers
+    , temporary
+    , directory
+    , filepath

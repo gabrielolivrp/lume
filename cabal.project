@@ -1,0 +1,13 @@
+packages:
+  lume-core/
+  lume-node/
+  lume-wallet/
+
+constraints:
+  lume-core source,
+  lume-node source,
+  lume-wallet source
+
+package *
+  tests: True
+  documentation: False
