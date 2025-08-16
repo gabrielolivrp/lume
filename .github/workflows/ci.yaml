@@ -34,10 +34,10 @@ jobs:
         run: cabal update
 
       - name: Build dependencies
-        run: cabal build all --only-dependencies
+        run: cabal build all --only-dependencies --disable-tests --disable-benchmarks
 
       - name: Build project
-        run: cabal build all
+        run: cabal build all --disable-tests --disable-benchmarks
 
       - name: Run tests
         run: cabal test all --test-show-details=direct
