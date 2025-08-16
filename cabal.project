@@ -9,5 +9,15 @@ constraints:
   lume-wallet source
 
 package *
-  tests: True
+  tests: False
+  benchmarks: False
   documentation: False
+
+package lume-core
+  tests: True
+
+package lume-wallet
+  tests: True
+
+package lume-node
+  tests: True
