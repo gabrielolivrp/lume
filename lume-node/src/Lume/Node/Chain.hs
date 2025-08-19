@@ -70,7 +70,7 @@ runChainM config action = DB.runDatabaseM $ runExceptT $ do
 createBlockchain :: ChainM m ()
 createBlockchain = do
   chainExists <- isChainInitialized
-  when chainExists $ throwError ChainAlreadyCreatedError
+  when chainExists (throwError ChainAlreadyCreatedError)
   applyBlock genesisBlock
 
 applyBlock :: Block -> ChainM m ()

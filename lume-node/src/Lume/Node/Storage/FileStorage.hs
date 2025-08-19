@@ -24,7 +24,7 @@ import Data.Word (Word32)
 import GHC.IO.Handle (Handle, hFileSize)
 import GHC.IO.IOMode (IOMode (..))
 import Lume.Core.Block (Block)
-import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist)
+import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.FilePath ((</>))
 import System.IO (SeekMode (AbsoluteSeek), hClose, hSeek, hTell, openBinaryFile)
 
@@ -45,20 +45,20 @@ mkFileName :: FileIndex -> String
 mkFileName fileIdx =
   let fileName = replicate (5 - length (show fileIdx)) '0' <> show fileIdx
    in "blk_" <> fileName <> ".dat"
+{-# INLINE mkFileName #-}
 
 mkDirectoryPath :: FilePath -> FilePath
 mkDirectoryPath basePath = basePath </> "data"
 {-# INLINE mkDirectoryPath #-}
 
 writeBlock :: FilePath -> FileIndex -> Block -> IO BlockPosition
-writeBlock basePath index block = do
-  let dir = mkDirectoryPath basePath
-  directoryExists <- doesDirectoryExist dir
-  createDirectoryIfMissing directoryExists dir
+writeBlock base index block = do
+  let fsp = mkDirectoryPath base
+  createDirectoryIfMissing True fsp
 
-  let fp = dir </> mkFileName index
+  let fp = fsp </> mkFileName index
   fileExists <- doesFileExist fp
-  unless fileExists $ writeFile fp ""
+  unless fileExists (writeFile fp "")
 
   withBinaryFile fp ReadWriteMode $ \h -> do
     hSeek h AbsoluteSeek =<< hFileSize h

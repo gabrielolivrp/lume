@@ -10,6 +10,7 @@ import qualified Lume.Core.Crypto.Hash as Hash
 import qualified Lume.Core.Transaction as Tx
 import Lume.Wallet.Config (Config (..), WalletRpcConfig (..))
 import Lume.Wallet.Internal
+import Lume.Wallet.Types
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.HUnit (assertBool, assertEqual, assertFailure, testCase)
@@ -37,7 +38,6 @@ internalSpec =
             newWallet config walletName >>= \case
               Left err -> assertFailure $ "Failed to create wallet: " ++ show err
               Right wallet -> pure wallet
-
           assertEqual "Wallet name should match" walletName (wName wallet)
           assertBool "Wallet address should be valid" (Addr.isValidAddress (wAddr wallet))
     , testCase "should store and load a wallet correctly using WalletStorage" $
@@ -70,16 +70,12 @@ internalSpec =
           result <-
             withWallet config walletName $ do
               storeWallet wallet
-              -- Store UTXO
               let txId = Hash.hash' "abcd1234"
                   utxo = Tx.UTXO txId 0 (wAddr wallet) 1000
               storeUTXO utxo
-              -- Verify it's stored
               utxos <- getUTXOs
               liftIO $ assertEqual "Should have one UTXO stored" 1 (length utxos)
-              -- Mark as spent
               spendUTXO utxo
-              -- Get again — still exists unless you implement filtering of spent UTXOs
               utxos2 <- getUTXOs
               liftIO $ assertEqual "UTXO should still exist after marking as spent" 0 (length utxos2)
           case result of
@@ -112,19 +108,15 @@ internalSpec =
           resultWallet2 <-
             withWallet config walletName2 $ do
               storeWallet wallet2
-
               let utxo1 = UTXO (Hash.hash' "tx1") 0 (wAddr wallet1) 100000
                   utxo2 = UTXO (Hash.hash' "tx2") 0 (wAddr wallet1) 100000
                   utxo3 = UTXO (Hash.hash' "tx3") 0 (wAddr wallet1) 100000
                   utxo4 = UTXO (Hash.hash' "tx4") 0 (wAddr wallet1) 100000
-
               storeUTXO utxo1
               storeUTXO utxo2
               storeUTXO utxo3
               storeUTXO utxo4
-
               sendTransaction (wAddr wallet2) 500
-
           case resultWallet2 of
             Left err -> assertFailure $ "Error during wallet operations: " ++ show err
             Right _ -> pure ()

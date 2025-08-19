@@ -10,7 +10,9 @@ import GHC.Natural (Natural)
 import Lume.Core.Crypto.Address qualified as Addr
 import Lume.Core.Transaction.Coin
 import Lume.Wallet.Config (Config (cDataDir), parseConfig)
+import Lume.Wallet.FileSystem (checkWalletExists)
 import Lume.Wallet.Internal
+import Lume.Wallet.Types
 
 separator :: String
 separator = "====================================================="

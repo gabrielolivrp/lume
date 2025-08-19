@@ -18,6 +18,8 @@ library
     , Lume.Wallet.Transaction.CoinSelection
     , Lume.Wallet.Transaction.Signer
     , Lume.Wallet.Network.Node
+    , Lume.Wallet.FileSystem
+    , Lume.Wallet.Types
     , Lume.Wallet.Internal
     , Lume.Wallet.Command
   other-modules:

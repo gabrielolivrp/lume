@@ -5,9 +5,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Lume.Wallet.Internal (
-  WalletName,
-  getWalletName,
-  Wallet (..),
   WalletError (..),
   withWallet,
   storeWallet,
@@ -16,11 +13,9 @@ module Lume.Wallet.Internal (
   storeUTXO,
   getUTXOs,
   newWallet,
-  checkWalletExists,
   loadAllWallets,
   scanFullUTXO,
   sendTransaction,
-  mkWalletName,
 )
 where
 
@@ -31,33 +26,22 @@ import Control.Monad.Reader
 import Data.Aeson (ToJSON (toJSON), encode)
 import Data.ByteString.Lazy.Char8 qualified as LC8
 import Data.Either (partitionEithers)
-import Data.List (find, isPrefixOf)
+import Data.List (find)
 import Data.List.NonEmpty qualified as NE
 import Data.Maybe (catMaybes)
 import Data.Set qualified as S
 import Lume.Core
-import Lume.Core.Crypto.Address (Address)
 import Lume.Core.Crypto.Address qualified as Addr
 import Lume.Core.Crypto.Hash qualified as Hash
 import Lume.Core.Crypto.Signature qualified as Sig
 import Lume.Wallet.Config (Config (cDataDir), mkRPCUrl)
+import Lume.Wallet.FileSystem (checkWalletExists, createWalletDirectory, loadAllWalletsNames, mkWalletPath)
 import Lume.Wallet.Network.Node (fetchGetBlockCount, handleRequest', mkGetBlockHashRequest, mkGetBlockRequest)
 import Lume.Wallet.Storage.Database qualified as DB
 import Lume.Wallet.Transaction (SigTxIn (SigTxIn), signTx)
 import Lume.Wallet.Transaction.Builder (BuildUnsignedTxParams (BuildUnsignedTxParams), TxBuilderError, buildUnsignedTx)
-import System.Directory (createDirectoryIfMissing, doesDirectoryExist, getDirectoryContents)
+import Lume.Wallet.Types (Wallet (..), WalletName (..))
 import System.FilePath ((</>))
-
-newtype WalletName = WalletName {getWalletName :: String}
-  deriving (Show, Eq)
-
-data Wallet = Wallet
-  { wName :: WalletName
-  , wPrivKey :: Sig.PrivateKey
-  , wPubKey :: Sig.PublicKey
-  , wAddr :: Addr.Address
-  }
-  deriving (Show, Eq)
 
 data WalletError
   = WalletDatabaseError DB.DatabaseError
@@ -89,19 +73,13 @@ data WalletContext = WalletContext
 
 type WalletM m a = (MonadIO m) => ReaderT WalletContext (ExceptT WalletError m) a
 
-mkWalletName :: String -> WalletName
-mkWalletName name = WalletName name
-
-mkWalletPath :: FilePath -> WalletName -> FilePath
-mkWalletPath basePath walletName = basePath </> "wallets" </> "wallet_" <> getWalletName walletName
-
 mkContext :: (MonadIO m) => Config -> WalletName -> ExceptT WalletError m WalletContext
 mkContext config walletName = do
   let path = mkWalletPath (cDataDir config) walletName
   database <-
     withExceptT WalletDatabaseError $
       DB.openDatabase (path </> "wallet.db")
-  pure $ WalletContext walletName database
+  pure (WalletContext walletName database)
 
 withWallet :: (MonadIO m) => Config -> WalletName -> WalletM m a -> m (Either WalletError a)
 withWallet config name action = do
@@ -110,7 +88,7 @@ withWallet config name action = do
     runReaderT action ctx
 
 liftDB :: (MonadTrans t, Monad m) => ExceptT DB.DatabaseError m a -> t (ExceptT WalletError m) a
-liftDB action = lift $ withExceptT WalletDatabaseError action
+liftDB action = lift (withExceptT WalletDatabaseError action)
 
 storeWallet :: Wallet -> WalletM m ()
 storeWallet (Wallet walletName privKey pubKey (Addr.Address addr)) = do
@@ -186,7 +164,7 @@ getUTXOs = do
         value = fromIntegral (DB.umAmount um)
     pure (UTXO txId idx addr value)
 
-sendTransaction :: Address -> Coin -> WalletM m ()
+sendTransaction :: Addr.Address -> Coin -> WalletM m ()
 sendTransaction to' amount' = do
   wallet <-
     loadWallet >>= \case
@@ -212,18 +190,17 @@ newWallet config walletName = do
   if exists
     then pure $ Left (WalletAlreadyExistsError . getWalletName $ walletName)
     else do
-      let path = mkWalletPath (cDataDir config) walletName
-      createDirectoryIfMissing True path
+      createWalletDirectory (cDataDir config) walletName
       keyPair <- generateWalletKeyPair
       case keyPair of
         Left err -> pure (Left err)
         Right keyPair' -> pure (mkWallet walletName keyPair')
- where
-  mkWallet :: WalletName -> Sig.KeyPair -> Either WalletError Wallet
-  mkWallet walletName' (Sig.KeyPair (pk, sk)) =
-    case Addr.fromPublicKey pk of
-      Left err -> Left $ WalletCryptoError $ "Failed to generate address: " <> show err
-      Right addr -> Right (Wallet walletName' sk pk addr)
+
+mkWallet :: WalletName -> Sig.KeyPair -> Either WalletError Wallet
+mkWallet walletName' (Sig.KeyPair (pk, sk)) =
+  case Addr.fromPublicKey pk of
+    Left err -> Left $ WalletCryptoError $ "Failed to generate address: " <> show err
+    Right addr -> Right (Wallet walletName' sk pk addr)
 
 generateWalletKeyPair :: IO (Either WalletError Sig.KeyPair)
 generateWalletKeyPair = do
@@ -232,18 +209,10 @@ generateWalletKeyPair = do
     Left (e :: SomeException) -> pure . Left . WalletCryptoError $ "Failed to generate key pair: " <> show e
     Right keyPair -> pure (Right keyPair)
 
-checkWalletExists :: FilePath -> WalletName -> IO Bool
-checkWalletExists basePath walletName = doesDirectoryExist (mkWalletPath basePath walletName)
-
 loadAllWallets :: Config -> IO (Either [WalletError] [Wallet])
 loadAllWallets config = do
-  let path = cDataDir config </> "wallets"
-  walletFiles <- getDirectoryContents path
-  let walletNames =
-        map (mkWalletName . drop 7)
-          . filter (isPrefixOf "wallet_")
-          $ walletFiles
-  results <- forM walletNames $ \name -> withWallet config name loadWallet
+  walletNames <- loadAllWalletsNames (cDataDir config)
+  results <- forM walletNames (\name -> withWallet config name loadWallet)
   let (errors, mWallets) = partitionEithers results
   if null errors
     then pure $ Right (catMaybes mWallets)
@@ -300,7 +269,7 @@ processBlocks config wallets blocks = do
       )
       txs
 
-processTxs :: (Monad m, MonadIO m) => Config -> [Wallet] -> S.Set Address -> (UTXO -> WalletM m a) -> [Tx] -> m [WalletError]
+processTxs :: (Monad m, MonadIO m) => Config -> [Wallet] -> S.Set Addr.Address -> (UTXO -> WalletM m a) -> [Tx] -> m [WalletError]
 processTxs config' wallets addresses action txs = do
   concat <$> mapM handleTx txs
  where
@@ -313,20 +282,20 @@ processTxs config' wallets addresses action txs = do
     let (errors, _) = partitionEithers results
     pure errors
 
-findUTXO :: S.Set Address -> Tx -> [UTXO]
+findUTXO :: S.Set Addr.Address -> Tx -> [UTXO]
 findUTXO addresses tx =
   let hash = txHash tx
       outs = filter (\out -> S.member (out ^. txOutAddress) addresses) (tx ^. txOut)
    in zipWith (mkUTXO hash) outs [0 ..]
 
-splitWalletTxs :: S.Set Address -> S.Set Sig.PublicKey -> Block -> ([Tx], [Tx])
+splitWalletTxs :: S.Set Addr.Address -> S.Set Sig.PublicKey -> Block -> ([Tx], [Tx])
 splitWalletTxs addresses pubKeys block =
   let txs = getTxs (block ^. bTxs)
       receivedTx = NE.filter (txToWalletAddress addresses) txs
       spentTx = NE.filter (txFromWalletKey pubKeys) txs
    in (spentTx, receivedTx)
 
-txToWalletAddress :: S.Set Address -> Tx -> Bool
+txToWalletAddress :: S.Set Addr.Address -> Tx -> Bool
 txToWalletAddress addresses tx =
   let outputs = S.fromList (tx ^.. txOut . traverse . txOutAddress)
    in not $ S.null (S.intersection addresses outputs)

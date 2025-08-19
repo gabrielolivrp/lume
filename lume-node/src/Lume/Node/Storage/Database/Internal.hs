@@ -25,8 +25,9 @@ import Data.Binary (Binary, decodeOrFail, encode)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BSL
 import Database.LevelDB qualified as LevelDB
+import System.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>))
-import UnliftIO (MonadUnliftIO)
+import UnliftIO (MonadIO (liftIO), MonadUnliftIO)
 
 data Context
   = BlockContext
@@ -59,7 +60,10 @@ openChainStateDB :: (DatabaseM m) => FilePath -> m ChainStateDatabase
 openChainStateDB fp = openDatabase @'ChainStateContext (fp </> "chainstate")
 
 openDatabase :: (DatabaseContext scope, DatabaseM m) => FilePath -> m (Database scope)
-openDatabase fp = Database <$> LevelDB.open fp LevelDB.defaultOptions{LevelDB.createIfMissing = True}
+openDatabase fp = do
+  liftIO (createDirectoryIfMissing True fp)
+  db <- LevelDB.open fp LevelDB.defaultOptions{LevelDB.createIfMissing = True}
+  pure (Database db)
 
 dbPut :: (DatabaseM m, Binary a) => Database scope -> BS.ByteString -> a -> m ()
 dbPut inst k v =

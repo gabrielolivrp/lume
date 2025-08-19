@@ -4,8 +4,8 @@
 module CLI where
 
 import GHC.Natural (Natural)
+import Lume.Wallet
 import Lume.Wallet.Command qualified as Command
-import Lume.Wallet.Internal (mkWalletName)
 import Options.Applicative
 
 defaultWalletConfigPath :: FilePath
