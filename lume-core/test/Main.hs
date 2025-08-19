@@ -1,4 +1,4 @@
-import Test.Tasty (TestTree, defaultMain, testGroup)
+import Test.Tasty (defaultMain, testGroup)
 
 import Lume.Core.Block.DifficultySpec (difficultySpec)
 import Lume.Core.Block.InternalSpec (blockInternalSpec)
