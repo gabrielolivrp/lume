@@ -18,7 +18,7 @@ databaseSpec =
     [ testCase "should store and get BlockModel" $
         withSystemTempDirectory "database-test" $ \dir ->
           runDatabaseM $ do
-            let blockHash' = blockHash genesisBlock
+            let blockid = blockHash genesisBlock
                 blockModel =
                   BlockModel
                     { bmVersion = 1
@@ -27,14 +27,14 @@ databaseSpec =
                     , bmTxCount = 3
                     , bmFile = 0
                     , bmDataPos = 100
-                    , bmMerkleRoot = blockHash'
+                    , bmMerkleRoot = blockid
                     , bmTimestamp = Timestamp 999
                     , bmBits = initialBits
                     , bmNonce = 7
                     }
             db <- openBlockDB dir
-            putBlock db blockHash' blockModel
-            result <- getBlock db blockHash'
+            putBlock db blockid blockModel
+            result <- getBlock db blockid
             case result of
               Left err ->
                 liftIO $ assertFailure $ "getBlock failed unexpectedly: " <> show err

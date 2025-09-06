@@ -3,20 +3,24 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 
-module Lume.Node.Network.RPC (startServer) where
+module Lume.Node.Network.RPC (startRPCServer) where
 
 import Control.Applicative ((<|>))
-import Control.Lens hiding ((.=))
-import Control.Monad.Reader (MonadIO (liftIO))
+import Control.Distributed.Process (Process, say)
+import Control.Distributed.Process.Node (runProcess)
+import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.Aeson
-import Data.ByteString.Char8 qualified as Char8
+import Data.ByteString.Char8 qualified as C8
 import Data.ByteString.Lazy qualified as BSL
 import Data.String (IsString (fromString))
+import Data.Text qualified as Text
+import Data.Text.Encoding (encodeUtf8)
 import Lume.Core
 import Lume.Core.Crypto.Hash (fromHex)
-import Lume.Node.Chain (ChainM, getBestBlock, getBlockByHash, getBlockByHeight, runChainM)
+import Lume.Node.Chain (ChainM, getBestHeight, getBlockByHash, getBlockByHeight, runChainM, validateTransaction)
 import Lume.Node.Config (Config (cRpc), RpcConfig (rpcHost, rpcPort))
-import Lume.Node.Network.State (State)
+import Lume.Node.Network.Message (broadcast, mkTxInv)
+import Lume.Node.Network.State (NodeContext (nDatabase, nLocalNode, nState), insertMempoolTx)
 import Network.HTTP.Types (status200, status405)
 import Network.Wai (Request (requestMethod), getRequestBodyChunk, responseLBS)
 import Network.Wai.Handler.Warp
@@ -117,34 +121,40 @@ mkErrorInvalidParams reqId msg mdata = RPCFailure reqId (RPCError (-32602) msg m
 mkSucess :: Int -> Value -> RPCResponse
 mkSucess reqId result = RPCResult reqId result rpcVersion
 
-startServer :: Config -> State -> IO ()
-startServer config _state = do
+startRPCServer :: Config -> NodeContext -> Process ()
+startRPCServer config context = do
+  let host = rpcHost (cRpc config)
+      port = rpcPort (cRpc config)
+
+  say $ "Starting RPC server on " ++ host ++ ":" ++ show port
+
   let settings =
         defaultSettings
-          { settingsPort = rpcPort . cRpc $ config
-          , settingsHost = fromString . rpcHost . cRpc $ config
+          { settingsHost = fromString host
+          , settingsPort = port
           }
 
-  runSettings settings $ \req respond ->
+  liftIO . runSettings settings $ \req respond -> do
     case requestMethod req of
       "POST" -> do
         result <-
-          runChainM config (handleRequest req) >>= \case
-            Left err -> pure . Single $ mkInternalRPCError 0 (show err) Nothing
-            Right resp -> pure resp
+          runChainM config (nDatabase context) (handleRequest context req)
+            >>= \case
+              Left err -> pure . Single $ mkInternalRPCError 0 (show err) Nothing
+              Right resp -> pure resp
         respond $ responseLBS status200 [("Content-Type", "application/json")] (encode result)
       _ -> respond $ responseLBS status405 [("Content-Type", "text/plain")] "Method Not Allowed"
 
-handleRequest :: Request -> ChainM m (RPCWrapper RPCResponse)
-handleRequest req = do
+handleRequest :: NodeContext -> Request -> ChainM m (RPCWrapper RPCResponse)
+handleRequest context req = do
   body <- liftIO $ getRequestBodyChunk req
   let jsonBody = decode (BSL.fromStrict body) :: Maybe (RPCWrapper RPCRequest)
   case jsonBody of
     Just (Single (RPCRequest reqId method params _)) ->
-      Single <$> dispatch reqId method params
+      Single <$> dispatch context reqId method params
     Just (Batch requests) ->
       -- TODO: handle each request in parallel
-      Batch <$> mapM (\(RPCRequest reqId method params _) -> dispatch reqId method params) requests
+      Batch <$> mapM (\(RPCRequest reqId method params _) -> dispatch context reqId method params) requests
     Nothing -> pure . Single $ mkErrorInvalidRequest 0 "Invalid JSON-RPC request" Nothing
 
 withParsedParams :: (FromJSON a) => Value -> (a -> ChainM m RPCResponse) -> ChainM m RPCResponse
@@ -152,8 +162,8 @@ withParsedParams params handler = case fromJSON params of
   Success values -> handler values
   Error err -> pure $ mkErrorInvalidParams 0 err Nothing
 
-dispatch :: Int -> String -> Value -> ChainM m RPCResponse
-dispatch reqId method params =
+dispatch :: NodeContext -> Int -> [Char] -> Value -> ChainM m RPCResponse
+dispatch context reqId method params =
   case method of
     "getblockcount" -> withParsedParams params $ \() -> handleGetBlockCount reqId
     "getblockhash" -> withParsedParams params $ \case
@@ -162,14 +172,32 @@ dispatch reqId method params =
     "getblock" -> withParsedParams params $ \case
       [hash] -> handleGetBlock reqId hash
       _ -> pure $ mkErrorInvalidParams reqId "Expected a single string parameter for block hash" Nothing
+    "sendrawtransaction" -> withParsedParams params $ \case
+      [String rawTx] -> handleSendRawTransaction context reqId rawTx
+      _ -> pure $ mkErrorInvalidParams reqId "Expected a single string parameter for raw transaction" Nothing
     _ -> pure $ mkErrorMethodNotFound reqId method Nothing
+
+handleSendRawTransaction :: NodeContext -> Int -> Text.Text -> ChainM m RPCResponse
+handleSendRawTransaction context reqId rawTx = do
+  let rawTx' = BSL.fromStrict (encodeUtf8 rawTx)
+  case txFromBase64 rawTx' of
+    Left err -> pure $ mkErrorInvalidParams reqId ("Failed to decode base64 transaction: " ++ err) Nothing
+    Right decoded ->
+      case decode decoded of
+        Nothing -> pure $ mkErrorInvalidParams reqId "Failed to decode transaction JSON" Nothing
+        Just tx -> do
+          validateTransaction tx
+          let txid = txHash tx
+              msg = mkTxInv txid
+          liftIO $
+            insertMempoolTx (nState context) tx
+              >> runProcess (nLocalNode context) (broadcast context msg)
+          pure $ mkSucess reqId (toJSON txid)
 
 handleGetBlockCount :: Int -> ChainM m RPCResponse
 handleGetBlockCount reqId = do
-  bestBlock <- getBestBlock
-  pure $ case bestBlock of
-    Nothing -> mkItemNotFound reqId "best block" Nothing
-    Just blockModel -> mkSucess reqId (Number . fromIntegral $ blockModel ^. bHeader . bHeight)
+  bestHeight <- getBestHeight
+  pure $ mkSucess reqId (Number . fromIntegral $ bestHeight)
 
 handleGetBlockHash :: Int -> Int -> ChainM m RPCResponse
 handleGetBlockHash reqId height = do
@@ -179,8 +207,8 @@ handleGetBlockHash reqId height = do
     Just b -> mkSucess reqId (toJSON (blockHash b))
 
 handleGetBlock :: Int -> String -> ChainM m RPCResponse
-handleGetBlock reqId bHash = do
-  case fromHex (Char8.pack bHash) of
+handleGetBlock reqId bHash =
+  case fromHex (C8.pack bHash) of
     Nothing -> pure $ mkErrorInvalidParams reqId "Invalid block hash" Nothing
     Just bHash' -> do
       block <- getBlockByHash bHash'

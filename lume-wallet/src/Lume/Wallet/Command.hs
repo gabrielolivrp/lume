@@ -81,7 +81,7 @@ sendTransactionCommand configPath walletName to amount = do
             sendTransaction addr coin
       case result of
         Left err -> putStrLn $ "❌ Transaction failed: " ++ show err
-        Right _ -> pure ()
+        Right txid -> putStrLn $ "✅ Transaction sent successfully! TXID: " ++ txid
 
 scanFullUTXOCommand :: FilePath -> IO ()
 scanFullUTXOCommand configPath = do

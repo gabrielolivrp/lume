@@ -1,6 +1,6 @@
 module Lume.Node.Command where
 
-import Lume.Node.Chain (createBlockchain, runChainM)
+import Lume.Node.Chain (createBlockchain, runChainM')
 import Lume.Node.Config (parseConfig)
 import Lume.Node.Network (startNode)
 
@@ -21,7 +21,7 @@ startNodeCommand configPath = do
 createBlockchainCommand :: FilePath -> IO ()
 createBlockchainCommand configPath = do
   config <- parseConfig configPath
-  result <- runChainM config createBlockchain
+  result <- runChainM' config createBlockchain
   case result of
     Left err -> putStrLn $ "❌ Failed to initialize blockchain: " ++ show err
     Right _ -> do

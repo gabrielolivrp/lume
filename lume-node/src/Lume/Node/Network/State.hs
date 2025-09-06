@@ -1,57 +1,105 @@
 {-# LANGUAGE ImportQualifiedPost #-}
 
 module Lume.Node.Network.State (
+  NodeContext (..),
   State,
-  mkState,
+  initState,
   getPeers,
   addPeer,
+  getNodeIds,
   removePeer,
-  addTx,
-  removeTx,
-  getMempool,
+  insertMempoolTx,
+  deleteMempoolTx,
+  lookupMempoolTx,
+  memberMempoolTx,
+  getPeer,
+  updatePeer,
 ) where
 
 import Control.Concurrent (MVar, modifyMVar_, newMVar, readMVar)
-import Data.Set qualified as S
+import Control.Distributed.Process (NodeId)
+import Control.Distributed.Process.Node
+import Data.Foldable (find)
+import Data.Word
 import Lume.Core (Tx, txHash)
-import Lume.Node.Mempool (Mempool, addTransaction, emptyMempool, removeTransaction)
-import Lume.Node.Network.Peer (Peer)
+import Lume.Core.Crypto.Hash (Hash)
+import Lume.Node.Config (Config)
+import Lume.Node.Mempool qualified as Mem
+import Lume.Node.Network.Peer (Peer (pNodeId))
+import Lume.Node.Storage.Database qualified as DB
 
-data State = State
-  { sPeers :: MVar (S.Set Peer)
-  , sMempool :: MVar Mempool
+data NodeContext = NodeContext
+  { nLocalNode :: LocalNode
+  , nSelfNodeId :: NodeId
+  , nState :: State
+  , nDatabase :: DB.Database
+  , nConfig :: Config
+  , nProtocolVersion :: Word32
+  , nMinProtocolVersion :: Word32
   }
 
-mkState :: IO State
-mkState = do
-  peers <- newMVar S.empty
-  mempool <- newMVar emptyMempool
+data State = State
+  { sPeers :: MVar [Peer]
+  , sMempool :: MVar Mem.Mempool
+  }
+
+initState :: IO State
+initState = do
+  peers <- newMVar []
+  mempool <- newMVar Mem.empty
   pure State{sPeers = peers, sMempool = mempool}
 
-getPeers :: State -> IO (S.Set Peer)
+getPeers :: State -> IO [Peer]
 getPeers state = readMVar (sPeers state)
+
+getNodeIds :: State -> IO [NodeId]
+getNodeIds state = do
+  peers <- readMVar (sPeers state)
+  pure $ map pNodeId peers
+
+getPeer :: State -> NodeId -> IO (Maybe Peer)
+getPeer state nid = do
+  peers <- readMVar (sPeers state)
+  pure $ find (\p -> pNodeId p == nid) peers
+
+updatePeer :: State -> Peer -> IO ()
+updatePeer state peer = do
+  let peers = sPeers state
+  modifyMVar_ peers $ \ps -> do
+    let ps' = filter (\p -> pNodeId p /= pNodeId peer) ps
+    pure (peer : ps')
 
 addPeer :: State -> Peer -> IO ()
 addPeer state peer = do
   let peers = sPeers state
-  modifyMVar_ peers $ \ps -> pure (S.union ps (S.singleton peer))
+  modifyMVar_ peers $ \ps -> pure (peer : ps)
 
 removePeer :: State -> Peer -> IO ()
 removePeer state peer = do
   let peers = sPeers state
-  modifyMVar_ peers $ \ps -> pure (S.delete peer ps)
+  modifyMVar_ peers $ \ps -> do
+    let ps' = filter (\p -> pNodeId p /= pNodeId peer) ps
+    pure ps'
 
-addTx :: State -> Tx -> IO ()
-addTx state tx = do
+insertMempoolTx :: State -> Tx -> IO ()
+insertMempoolTx state tx = do
   let mempool = sMempool state
   let hash = txHash tx
-  modifyMVar_ mempool $ \mem -> pure (addTransaction hash tx mem)
+  modifyMVar_ mempool $ \mem -> pure (Mem.insertTx hash tx mem)
 
-removeTx :: State -> Tx -> IO ()
-removeTx state tx = do
+deleteMempoolTx :: State -> Tx -> IO ()
+deleteMempoolTx state tx = do
   let mempool = sMempool state
   let hash = txHash tx
-  modifyMVar_ mempool $ \mem -> pure (removeTransaction hash mem)
+  modifyMVar_ mempool $ \mem -> pure (Mem.deleteTx hash mem)
 
-getMempool :: State -> IO Mempool
-getMempool state = readMVar (sMempool state)
+memberMempoolTx :: State -> Hash -> IO Bool
+memberMempoolTx state txid = do
+  let mempool = sMempool state
+  mem <- readMVar mempool
+  pure $ Mem.memberTx txid mem
+
+lookupMempoolTx :: State -> Hash -> IO (Maybe Tx)
+lookupMempoolTx state txid = do
+  mempool <- readMVar (sMempool state)
+  pure $ Mem.lookupTx mempool txid

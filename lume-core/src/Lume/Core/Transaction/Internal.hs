@@ -45,6 +45,8 @@ module Lume.Core.Transaction.Internal (
   txHash,
   buildCoinbaseTx,
   buildTx,
+  txToBase64,
+  txFromBase64,
 )
 where
 
@@ -52,6 +54,8 @@ import Control.Lens hiding ((.=))
 import Control.Monad (forM, unless, when)
 import Data.Aeson
 import Data.Binary (Binary (get, put))
+import Data.ByteString.Base64.Lazy qualified as B64L
+import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (toList)
 import Data.List (nub)
 import Data.List.NonEmpty qualified as NE
@@ -295,29 +299,35 @@ validateTx (UtxoSet utxos) tx = do
 
     utxo <- case M.lookup prevOut utxos of
       Just utxo -> pure utxo
-      Nothing -> Left $ TransactionUtxoNotFoundError txin
+      Nothing -> Left (TransactionUtxoNotFoundError txin)
 
     txinAddr <- case fromPublicKey (txin ^. txInPubKey) of
       Right addr -> pure addr
-      Left _ -> Left $ TransactionUnableToDeriveAddressError txin
+      Left _ -> Left (TransactionUnableToDeriveAddressError txin)
 
     when (utxo ^. utxoOwner /= txinAddr) $
       Left (InvalidInputOwnershipError txin)
 
     let pubKey = txin ^. txInPubKey
         sig = txin ^. txInSignature
-        msg = Hash.toRawBytes $ txHash tx
+        msg = Hash.toRawBytes (txHash tx)
 
     unless (Sig.verify pubKey msg sig) $
       Left (TransactionInvalidSignatureError txin)
 
-    pure $ utxo ^. utxoValue
+    pure (utxo ^. utxoValue)
 
   let outValue = map (^. txOutValue) outputs
       totalIn = sum inValue
       totalOut = sum outValue
 
-  when (length inputs /= length (nub (map (^. txInPrevOut) inputs))) $
-    Left TransactionDuplicateInputError
+  let outpoints = nub . map (^. txInPrevOut) $ inputs
+  when (length inputs /= length outpoints) (Left TransactionDuplicateInputError)
 
-  when (totalIn < totalOut) $ Left TransactionInsufficientFundsError
+  when (totalIn < totalOut) (Left TransactionInsufficientFundsError)
+
+txToBase64 :: Tx -> BSL.ByteString
+txToBase64 = B64L.encode . encode
+
+txFromBase64 :: BSL.ByteString -> Either String BSL.ByteString
+txFromBase64 = B64L.decode

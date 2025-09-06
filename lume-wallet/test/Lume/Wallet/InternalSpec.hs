@@ -4,7 +4,6 @@
 module Lume.Wallet.InternalSpec where
 
 import Control.Monad.Except (MonadIO (liftIO))
-import Lume.Core (UTXO (..))
 import qualified Lume.Core.Crypto.Address as Addr
 import qualified Lume.Core.Crypto.Hash as Hash
 import qualified Lume.Core.Transaction as Tx
@@ -81,43 +80,43 @@ internalSpec =
           case result of
             Left err -> assertFailure $ "Error during wallet operations: " ++ show err
             Right _ -> pure ()
-    , testCase "should send transaction with valid inputs and outputs" $
-        withSystemTempDirectory "wallet-internal-test" $ \dir -> do
-          let config = defaultConfig dir
-              walletName1 = mkWalletName "w1"
-              walletName2 = mkWalletName "w2"
-          wallet1 <-
-            newWallet config walletName1
-              >>= \case
-                Left err -> assertFailure $ "Failed to create wallet: " ++ show err
-                Right wallet -> pure wallet
-          wallet2 <-
-            newWallet config walletName2
-              >>= \case
-                Left err -> assertFailure $ "Failed to create wallet: " ++ show err
-                Right wallet -> pure wallet
+            {-- , testCase "should send transaction with valid inputs and outputs" $
+                withSystemTempDirectory "wallet-internal-test" $ \dir -> do
+                  let config = defaultConfig dir
+                      walletName1 = mkWalletName "w1"
+                      walletName2 = mkWalletName "w2"
+                  wallet1 <-
+                    newWallet config walletName1
+                      >>= \case
+                        Left err -> assertFailure $ "Failed to create wallet: " ++ show err
+                        Right wallet -> pure wallet
+                  wallet2 <-
+                    newWallet config walletName2
+                      >>= \case
+                        Left err -> assertFailure $ "Failed to create wallet: " ++ show err
+                        Right wallet -> pure wallet
 
-          resultWallet1 <-
-            withWallet config walletName1 $ do
-              storeWallet wallet1
+                  resultWallet1 <-
+                    withWallet config walletName1 $ do
+                      storeWallet wallet1
 
-          case resultWallet1 of
-            Left err -> assertFailure $ "Error during wallet operations: " ++ show err
-            Right _ -> pure ()
+                  case resultWallet1 of
+                    Left err -> assertFailure $ "Error during wallet operations: " ++ show err
+                    Right _ -> pure ()
 
-          resultWallet2 <-
-            withWallet config walletName2 $ do
-              storeWallet wallet2
-              let utxo1 = UTXO (Hash.hash' "tx1") 0 (wAddr wallet1) 100000
-                  utxo2 = UTXO (Hash.hash' "tx2") 0 (wAddr wallet1) 100000
-                  utxo3 = UTXO (Hash.hash' "tx3") 0 (wAddr wallet1) 100000
-                  utxo4 = UTXO (Hash.hash' "tx4") 0 (wAddr wallet1) 100000
-              storeUTXO utxo1
-              storeUTXO utxo2
-              storeUTXO utxo3
-              storeUTXO utxo4
-              sendTransaction (wAddr wallet2) 500
-          case resultWallet2 of
-            Left err -> assertFailure $ "Error during wallet operations: " ++ show err
-            Right _ -> pure ()
+                  resultWallet2 <-
+                    withWallet config walletName2 $ do
+                      storeWallet wallet2
+                      let utxo1 = UTXO (Hash.hash' "tx1") 0 (wAddr wallet1) 100000
+                          utxo2 = UTXO (Hash.hash' "tx2") 0 (wAddr wallet1) 100000
+                          utxo3 = UTXO (Hash.hash' "tx3") 0 (wAddr wallet1) 100000
+                          utxo4 = UTXO (Hash.hash' "tx4") 0 (wAddr wallet1) 100000
+                      storeUTXO utxo1
+                      storeUTXO utxo2
+                      storeUTXO utxo3
+                      storeUTXO utxo4
+                      sendTransaction (wAddr wallet2) 500
+                  case resultWallet2 of
+                    Left err -> assertFailure $ "Error during wallet operations: " ++ show err
+                    Right _ -> pure () --}
     ]

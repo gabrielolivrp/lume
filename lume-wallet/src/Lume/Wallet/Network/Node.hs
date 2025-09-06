@@ -115,7 +115,7 @@ handleRequest url rpcRequest = do
   response <- httpLBS request
   let body = getResponseBody response
   case eitherDecode body of
-    Right results -> pure (Right results)
+    Right result -> pure (Right result)
     Left err -> pure (Left err)
 
 fetchGetBlockCount :: String -> IO (Either String Int)
@@ -127,8 +127,20 @@ fetchGetBlockCount baseUrl = do
     Right (RpcResponseError _ (RpcError _ msg)) -> pure (Left msg)
     Left err -> pure (Left err)
 
+sendRawTransaction :: String -> String -> IO (Either String String)
+sendRawTransaction baseUrl rawTx = do
+  let request = mkSendRawTransactionRequest 1 rawTx
+  result <- handleRequest baseUrl request
+  case result of
+    Right (RpcResponseSuccess _ txid) -> pure (Right txid)
+    Right (RpcResponseError _ (RpcError _ msg)) -> pure (Left msg)
+    Left err -> pure (Left err)
+
 mkGetBlockHashRequest :: Int -> Int -> RpcRequest Int
 mkGetBlockHashRequest rpcId blockIndex = RpcRequest "getblockhash" [blockIndex] rpcId
 
 mkGetBlockRequest :: Int -> Hash -> RpcRequest Hash
 mkGetBlockRequest rpcId blockHash = RpcRequest "getblock" [blockHash] rpcId
+
+mkSendRawTransactionRequest :: Int -> String -> RpcRequest String
+mkSendRawTransactionRequest rpcId rawTx = RpcRequest "sendrawtransaction" [rawTx] rpcId

@@ -8,12 +8,15 @@ module Lume.Node.Chain (
   ChainContext (..),
   ChainM,
   runChainM,
+  runChainM',
   createBlockchain,
   validateBock,
   applyBlock,
   getBestBlock,
   getBlockByHash,
   getBlockByHeight,
+  getBestHeight,
+  validateTransaction,
 )
 where
 
@@ -22,7 +25,6 @@ import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.Trans.Resource
 import Data.Map qualified as M
-import Data.Maybe (catMaybes)
 import Data.Word (Word32, Word64)
 import Lume.Core
 import Lume.Core.Crypto.Hash (Hash)
@@ -44,9 +46,7 @@ data ChainContext = ChainContext
   , chainChainStateDB :: DB.ChainStateDatabase
   }
 
-type ChainM m a =
-  (MonadIO m) =>
-  ReaderT ChainContext (ExceptT ChainError (ResourceT m)) a
+type ChainM m a = (MonadIO m) => ReaderT ChainContext (ExceptT ChainError (ResourceT m)) a
 
 instance Show ChainError where
   show (ChainDatabaseError msg) =
@@ -60,12 +60,17 @@ instance Show ChainError where
   show ChainAlreadyCreatedError =
     "The blockchain has already been initialized. No need to recreate it."
 
-runChainM :: (MonadUnliftIO m) => Config -> ChainM m a -> m (Either ChainError a)
-runChainM config action = DB.runDatabaseM $ runExceptT $ do
-  blockDB <- DB.openBlockDB (cDataDir config)
-  chainStateDB <- DB.openChainStateDB (cDataDir config)
+runChainM' :: (MonadUnliftIO m) => Config -> ChainM m a -> m (Either ChainError a)
+runChainM' config action = DB.runDatabaseM . runExceptT $ do
+  DB.Database{DB.dbBlock = blockDB, DB.dbChainState = chainStateDB} <- DB.openDatabase (cDataDir config)
   let ctx = ChainContext config blockDB chainStateDB
   runReaderT action ctx
+
+runChainM :: (MonadUnliftIO m) => Config -> DB.Database -> ChainM m a -> m (Either ChainError a)
+runChainM config database action = do
+  let DB.Database{DB.dbBlock = blockDB, DB.dbChainState = chainStateDB} = database
+  let ctx = ChainContext config blockDB chainStateDB
+  DB.runDatabaseM . runExceptT $ runReaderT action ctx
 
 createBlockchain :: ChainM m ()
 createBlockchain = do
@@ -88,9 +93,9 @@ readBlock fileIdx blockPos = do
     Right b -> pure b
 
 getBlockByHash :: Hash -> ChainM m (Maybe Block)
-getBlockByHash blockHash' = do
+getBlockByHash bid = do
   ChainContext{chainBlockDB} <- ask
-  result <- DB.getBlock chainBlockDB blockHash'
+  result <- DB.getBlock chainBlockDB bid
   case result of
     Right (Just blockModel) ->
       Just <$> readBlock (DB.bmFile blockModel) (fromIntegral $ DB.bmDataPos blockModel)
@@ -106,6 +111,13 @@ getBlockByHeight height = do
     Right Nothing -> pure Nothing
     Right (Just bh) -> getBlockByHash (DB.hhHash bh)
 
+getBestHeight :: ChainM m Word64
+getBestHeight = do
+  bestBlock <- getBestBlock
+  case bestBlock of
+    Nothing -> pure 0
+    Just b -> pure $ b ^. bHeader . bHeight
+
 getBestBlock :: ChainM m (Maybe Block)
 getBestBlock = do
   ChainContext{chainBlockDB, chainChainStateDB} <- ask
@@ -120,9 +132,16 @@ getBestBlock = do
     Right Nothing -> pure Nothing
     Left err -> throwError $ ChainDatabaseError $ "Failed to get best block: " ++ show err
 
+validateTransaction :: Tx -> ChainM m ()
+validateTransaction tx = do
+  utxoSet <- buildUTXOSetFromTx tx
+  case validateTx utxoSet tx of
+    Left err -> throwError $ ChainValidationError $ "Transaction validation failed: " ++ show err
+    Right _ -> pure ()
+
 validateBock :: Block -> ChainM m ()
 validateBock block = do
-  utxoSet <- getUtxoSet block
+  utxoSet <- buildUTXOSetFromBlock block
   bestBlock <- getBestBlock
   case bestBlock of
     Nothing -> throwError $ ChainValidationError "No best block found to validate against."
@@ -175,7 +194,7 @@ storeBlock :: Block -> ChainM m ()
 storeBlock block = do
   ChainContext{chainConfig, chainBlockDB, chainChainStateDB} <- ask
 
-  let blockHash' = blockHash block
+  let bid = blockHash block
   fileIndex <-
     getLastBlockFile
       >>= \case
@@ -185,14 +204,14 @@ storeBlock block = do
   position <- liftIO $ FS.writeBlock (cDataDir chainConfig) fileIndex block
 
   let blockModel = DB.toBlockModel block DB.BlockStatusUnknown position fileIndex
-  DB.putBlock chainBlockDB blockHash' blockModel
+  DB.putBlock chainBlockDB bid blockModel
 
-  DB.putBestBlock chainChainStateDB blockHash'
+  DB.putBestBlock chainChainStateDB bid
 
   DB.putHeightToHash
     chainBlockDB
     (block ^. bHeader . bHeight)
-    (DB.HeightToHashModel blockHash')
+    (DB.HeightToHashModel bid)
 
   fileSize <- liftIO $ FS.getFileSize (cDataDir chainConfig) fileIndex
   when (fileSize >= FS.maxFileSize) $
@@ -226,29 +245,39 @@ storeTx height tx = do
         , DB.umHeight = height
         }
 
-getUtxoSet :: Block -> ChainM m UtxoSet
-getUtxoSet block = do
+buildUTXOSetFromBlock :: Block -> ChainM m UtxoSet
+buildUTXOSetFromBlock block = do
   ChainContext{chainChainStateDB} <- ask
   let inputs = concatMap (^. txIn) (getTxs $ block ^. bTxs)
-  utxos <- forM inputs $ \txin -> do
-    let prevOut = txin ^. txInPrevOut
-    utxo <- DB.getUtxo chainChainStateDB (prevOut ^. outpId) (prevOut ^. outpIdx)
-    case utxo of
-      Right (Just utxoModel) ->
-        pure $
-          Just
-            ( prevOut
-            , UTXO
-                { _utxoTxId = prevOut ^. outpId
-                , _utxoIdx = DB.umIdx utxoModel
-                , _utxoOwner = DB.umOwner utxoModel
-                , _utxoValue = DB.umValue utxoModel
-                }
-            )
-      Right Nothing -> pure Nothing
-      Left err -> throwError $ ChainDatabaseError $ "Failed to get UTXO: " ++ show err
+  utxos <- forM inputs $ \txin ->
+    buildUTXO chainChainStateDB txin >>= \utxo -> pure (txin ^. txInPrevOut, utxo)
+  pure . UtxoSet $ M.fromList utxos
 
-  pure . UtxoSet $ M.fromList (catMaybes utxos)
+buildUTXOSetFromTx :: Tx -> ChainM m UtxoSet
+buildUTXOSetFromTx tx = do
+  ChainContext{chainChainStateDB} <- ask
+  let inputs = tx ^. txIn
+  utxos <- forM inputs $ \txin ->
+    buildUTXO chainChainStateDB txin >>= \utxo -> pure (txin ^. txInPrevOut, utxo)
+  pure . UtxoSet $ M.fromList utxos
+
+buildUTXO :: DB.ChainStateDatabase -> TxIn -> ChainM m UTXO
+buildUTXO chainChainStateDB txin = do
+  let prevOut = txin ^. txInPrevOut
+  utxo <- DB.getUtxo chainChainStateDB (prevOut ^. outpId) (prevOut ^. outpIdx)
+  case utxo of
+    Right (Just utxoModel) -> pure (mkUTXOFromModel utxoModel prevOut)
+    Right Nothing -> throwError (ChainValidationError "Referenced UTXO not found.")
+    Left err -> throwError $ ChainDatabaseError ("Failed to get UTXO: " ++ show err)
+
+mkUTXOFromModel :: DB.UTXOModel -> Outpoint -> UTXO
+mkUTXOFromModel DB.UTXOModel{DB.umIdx, DB.umOwner, DB.umValue} outpoint =
+  UTXO
+    { _utxoTxId = outpoint ^. outpId
+    , _utxoIdx = umIdx
+    , _utxoOwner = umOwner
+    , _utxoValue = umValue
+    }
 
 isChainInitialized :: ChainM m Bool
 isChainInitialized = do

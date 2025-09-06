@@ -7,14 +7,20 @@ import Lume.Core (Tx)
 import Lume.Core.Crypto.Hash (Hash)
 
 newtype Mempool = Mempool
-  { getMemTxs :: M.Map Hash Tx
+  { getTxs :: M.Map Hash Tx
   }
 
-emptyMempool :: Mempool
-emptyMempool = Mempool M.empty
+empty :: Mempool
+empty = Mempool M.empty
 
-addTransaction :: Hash -> Tx -> Mempool -> Mempool
-addTransaction hash tx (Mempool txs) = Mempool $ M.insert hash tx txs
+insertTx :: Hash -> Tx -> Mempool -> Mempool
+insertTx hash tx (Mempool txs) = Mempool $ M.insert hash tx txs
 
-removeTransaction :: Hash -> Mempool -> Mempool
-removeTransaction hash (Mempool txs) = Mempool $ M.delete hash txs
+deleteTx :: Hash -> Mempool -> Mempool
+deleteTx hash (Mempool txs) = Mempool $ M.delete hash txs
+
+memberTx :: Hash -> Mempool -> Bool
+memberTx hash (Mempool txs) = M.member hash txs
+
+lookupTx :: Mempool -> Hash -> Maybe Tx
+lookupTx (Mempool txs) hash = M.lookup hash txs

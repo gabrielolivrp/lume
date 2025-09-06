@@ -12,6 +12,7 @@ module Lume.Node.Storage.Database.Internal (
   BlockDatabase,
   ChainStateDatabase,
   DatabaseError (..),
+  openDatabase,
   openBlockDB,
   openChainStateDB,
   dbPut,
@@ -41,38 +42,49 @@ instance DatabaseContext 'ChainStateContext
 
 type DatabaseM m = LevelDB.MonadResource m
 
-newtype Database (scope :: Context) = Database
+newtype Inst (scope :: Context) = Inst
   { dbInst :: LevelDB.DB
   }
 
-type BlockDatabase = Database 'BlockContext
+type BlockDatabase = Inst 'BlockContext
 
-type ChainStateDatabase = Database 'ChainStateContext
+type ChainStateDatabase = Inst 'ChainStateContext
+
+data Database = Database
+  { dbBlock :: BlockDatabase
+  , dbChainState :: ChainStateDatabase
+  }
 
 data DatabaseError
   = DatabaseDecodeError String
   deriving (Show, Eq)
 
+openDatabase :: (DatabaseM m) => FilePath -> m Database
+openDatabase fp = do
+  blockDB <- openBlockDB fp
+  chainStateDB <- openChainStateDB fp
+  pure (Database blockDB chainStateDB)
+
 openBlockDB :: (DatabaseM m) => FilePath -> m BlockDatabase
-openBlockDB fp = openDatabase @'BlockContext (fp </> "blocks")
+openBlockDB fp = openDatabase' @'BlockContext (fp </> "blocks")
 
 openChainStateDB :: (DatabaseM m) => FilePath -> m ChainStateDatabase
-openChainStateDB fp = openDatabase @'ChainStateContext (fp </> "chainstate")
+openChainStateDB fp = openDatabase' @'ChainStateContext (fp </> "chainstate")
 
-openDatabase :: (DatabaseContext scope, DatabaseM m) => FilePath -> m (Database scope)
-openDatabase fp = do
+openDatabase' :: (DatabaseContext scope, DatabaseM m) => FilePath -> m (Inst scope)
+openDatabase' fp = do
   liftIO (createDirectoryIfMissing True fp)
   db <- LevelDB.open fp LevelDB.defaultOptions{LevelDB.createIfMissing = True}
-  pure (Database db)
+  pure (Inst db)
 
-dbPut :: (DatabaseM m, Binary a) => Database scope -> BS.ByteString -> a -> m ()
+dbPut :: (DatabaseM m, Binary a) => Inst scope -> BS.ByteString -> a -> m ()
 dbPut inst k v =
-  let serialized = BSL.toStrict $ encode v
+  let serialized = BSL.toStrict (encode v)
    in LevelDB.put (dbInst inst) LevelDB.defaultWriteOptions{LevelDB.sync = True} k serialized
 
 dbGet ::
   (DatabaseM m, Binary a) =>
-  Database scope ->
+  Inst scope ->
   BS.ByteString ->
   m (Either DatabaseError (Maybe a))
 dbGet inst key = do
@@ -86,7 +98,7 @@ dbGet inst key = do
 
 dbDelete ::
   (DatabaseM m) =>
-  Database scope ->
+  Inst scope ->
   BS.ByteString ->
   m ()
 dbDelete inst = LevelDB.delete (dbInst inst) LevelDB.defaultWriteOptions
