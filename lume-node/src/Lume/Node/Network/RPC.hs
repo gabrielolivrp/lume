@@ -20,7 +20,7 @@ import Lume.Core.Crypto.Hash (fromHex)
 import Lume.Node.Chain (ChainM, getBestHeight, getBlockByHash, getBlockByHeight, runChainM, validateTransaction)
 import Lume.Node.Config (Config (cRpc), RpcConfig (rpcHost, rpcPort))
 import Lume.Node.Network.Message (broadcast, mkTxInv)
-import Lume.Node.Network.State (NodeContext (nDatabase, nLocalNode, nState), insertMempoolTx)
+import Lume.Node.Network.State (NodeContext (nDatabase, nLocalNode, nState), getMempoolSize, insertMempoolTx)
 import Network.HTTP.Types (status200, status405)
 import Network.Wai (Request (requestMethod), getRequestBodyChunk, responseLBS)
 import Network.Wai.Handler.Warp
@@ -175,7 +175,14 @@ dispatch context reqId method params =
     "sendrawtransaction" -> withParsedParams params $ \case
       [String rawTx] -> handleSendRawTransaction context reqId rawTx
       _ -> pure $ mkErrorInvalidParams reqId "Expected a single string parameter for raw transaction" Nothing
+    "getmempoolinfo" -> withParsedParams params $ \() -> handleGetMempoolInfo context reqId
     _ -> pure $ mkErrorMethodNotFound reqId method Nothing
+
+handleGetMempoolInfo :: NodeContext -> Int -> ChainM m RPCResponse
+handleGetMempoolInfo context reqId = do
+  size <- liftIO $ getMempoolSize (nState context)
+  let mempoolinfo = object ["size" .= size]
+  pure $ mkSucess reqId mempoolinfo
 
 handleSendRawTransaction :: NodeContext -> Int -> Text.Text -> ChainM m RPCResponse
 handleSendRawTransaction context reqId rawTx = do
