@@ -55,7 +55,7 @@ startP2PServer config context@(NodeContext _ selfnid state _ _ _ _) = do
         let newPeer = markPeer SentVersion . mkPeer $ nid
         liftIO (addPeer state newPeer)
         say $ "Discovered new peer: " ++ show nid
-        say $ "Sending version to new peer: " ++ show newPeer
+        say $ "Sending version message to " ++ show nid
         sendVersion context newPeer
         void $ monitor pid
 
