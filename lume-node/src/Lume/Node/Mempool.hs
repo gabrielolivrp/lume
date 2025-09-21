@@ -24,3 +24,6 @@ memberTx hash (Mempool txs) = M.member hash txs
 
 lookupTx :: Mempool -> Hash -> Maybe Tx
 lookupTx (Mempool txs) hash = M.lookup hash txs
+
+size :: Mempool -> Int
+size (Mempool txs) = M.size txs

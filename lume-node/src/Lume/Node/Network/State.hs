@@ -12,6 +12,7 @@ module Lume.Node.Network.State (
   deleteMempoolTx,
   lookupMempoolTx,
   memberMempoolTx,
+  getMempoolSize,
   getPeer,
   updatePeer,
 ) where
@@ -103,3 +104,8 @@ lookupMempoolTx :: State -> Hash -> IO (Maybe Tx)
 lookupMempoolTx state txid = do
   mempool <- readMVar (sMempool state)
   pure $ Mem.lookupTx mempool txid
+
+getMempoolSize :: State -> IO Int
+getMempoolSize state = do
+  mempool <- readMVar (sMempool state)
+  pure $ Mem.size mempool
