@@ -2,12 +2,13 @@
 
 module Lume.Node.Network (startNode) where
 
-import Control.Distributed.Process (getSelfNode, liftIO)
+import Control.Distributed.Process (getSelfNode, liftIO, spawnLocal)
 import Control.Distributed.Process.Internal.Types (LocalNode)
-import Control.Distributed.Process.Node (forkProcess, initRemoteTable, newLocalNode, runProcess)
+import Control.Distributed.Process.Node (initRemoteTable, newLocalNode, runProcess)
 import Control.Monad (void)
 import Data.Word (Word32)
 import Lume.Node.Config (Config (cDataDir, cHost, cPort))
+import Lume.Node.Miner (startMiner)
 import Lume.Node.Network.P2P (startP2PServer)
 import Lume.Node.Network.RPC (startRPCServer)
 import Lume.Node.Network.State (NodeContext (NodeContext), initState)
@@ -36,13 +37,9 @@ startNode config = do
     database <- DB.openDatabase (cDataDir config)
     state <- liftIO initState
     localNode <- liftIO (createLocalNode host port)
-
-    let mkContext selfnid = NodeContext localNode selfnid state database config protocolVersion minProtocolVersion
-
-    void . liftIO $ forkProcess localNode $ do
-      selfnid <- getSelfNode
-      startRPCServer config (mkContext selfnid)
-
     liftIO . runProcess localNode $ do
       selfnid <- getSelfNode
-      startP2PServer config (mkContext selfnid)
+      let context = NodeContext localNode selfnid state database config protocolVersion minProtocolVersion
+      void . spawnLocal $ startRPCServer config context
+      void . spawnLocal $ startMiner config context
+      startP2PServer config context
