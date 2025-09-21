@@ -7,15 +7,17 @@
 module Lume.Node.Network.Message where
 
 import Control.Distributed.Process (NodeId, Process, getSelfNode, nsendRemote, say, whereisRemoteAsync)
+import Control.Lens
 import Control.Monad (forM_, unless, when)
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.Binary (Binary)
+import Data.ByteString qualified as BS
 import Data.Set qualified as S
 import Data.Word
 import GHC.Generics (Generic)
-import Lume.Core (Tx, blockHash, txHash)
-import Lume.Core.Crypto.Hash (Hash)
-import Lume.Node.Chain (getBestHeight, getBlockByHeight, runChainM, validateTransaction)
+import Lume.Core (Block, BlockHeader, Tx, bHeader, bHeight, blockHash, txHash)
+import Lume.Core.Crypto.Hash (Hash, hash')
+import Lume.Node.Chain (getBestBlock, getBestHeight, getBlockByHash, getBlockByHeight, runChainM, validateTransaction)
 import Lume.Node.Network.Peer (HandshakeFlag (..), Peer (..), hasFlag, isReady, markPeer, mkPeer)
 import Lume.Node.Network.State
 import System.Random (randomRIO)
@@ -52,6 +54,20 @@ newtype GetData = GetData
   deriving (Show, Generic)
   deriving anyclass (Binary)
 
+newtype Headers = Headers
+  { getHeaders :: [BlockHeader]
+  }
+  deriving (Show, Generic)
+  deriving anyclass (Binary)
+
+data GetHeaders = GetHeaders
+  { ghVersion :: Word32
+  , ghBlockLocatorHashes :: [Hash]
+  , ghHashStop :: Hash
+  }
+  deriving (Show, Generic)
+  deriving anyclass (Binary)
+
 data MsgHeader = MsgHeader
   { mTtl :: Int
   , mSender :: NodeId
@@ -67,6 +83,8 @@ data MsgPayload
   | MInv Inv
   | MTx Tx
   | MGetData GetData
+  | MGetHeaders GetHeaders
+  | MHeaders Headers
   deriving (Show, Generic)
   deriving anyclass (Binary)
 
@@ -97,6 +115,8 @@ onMessageReceived context msg@Msg{mHeader, mPayload} = do
     MInv inv -> handleInv context inv nid >> forward context msg
     MGetData data' -> handleGetData context data' nid
     MTx tx -> handleTx context tx
+    MGetHeaders headers -> handleGetHeaders context nid headers
+    MHeaders headers -> handleHeaders context headers
 
 handleVersion :: NodeContext -> Version -> Process ()
 handleVersion context@NodeContext{nState, nMinProtocolVersion} (Version version bestHeight addrFrom)
@@ -123,6 +143,48 @@ handleVersion context@NodeContext{nState, nMinProtocolVersion} (Version version 
       sendVerAck updatedPeer
       onPeerReady context updatedPeer
 
+handleHeaders :: NodeContext -> Headers -> Process ()
+handleHeaders _ (Headers headers) = do
+  say $ "Received headers with " ++ show (length headers) ++ " headers"
+  forM_ headers $ \header -> do
+    say $ "Header: " ++ show header
+
+handleGetHeaders :: NodeContext -> NodeId -> GetHeaders -> Process ()
+handleGetHeaders context nid (GetHeaders _ locatorHashes hashStop) = do
+  commonAncestor <- liftIO $ findCommonAncestor context locatorHashes
+  case commonAncestor of
+    Nothing -> do
+      say $ "No common ancestor found for getheaders from nid: " ++ show nid
+      unicast nid (MHeaders (Headers []))
+    Just ancestor -> do
+      headers <- liftIO $ collectHeaders context ancestor hashStop 2000
+      unicast nid (MHeaders $ Headers (map (^. bHeader) headers))
+
+findCommonAncestor :: NodeContext -> [Hash] -> IO (Maybe Block)
+findCommonAncestor ctx = go
+ where
+  go [] = pure Nothing
+  go (h : hs) = do
+    mb <- runChainM (nConfig ctx) (nDatabase ctx) (getBlockByHash h)
+    case mb of
+      Right (Just blk) -> pure (Just blk)
+      Right Nothing -> go hs
+      Left _ -> go hs
+
+collectHeaders :: NodeContext -> Block -> Hash -> Word64 -> IO [Block]
+collectHeaders ctx ancestor hashStop limit = go (ancestor ^. bHeader . bHeight + 1) [] 0
+ where
+  go _ acc n | n >= limit = pure acc
+  go height acc n = do
+    mb <- runChainM (nConfig ctx) (nDatabase ctx) (getBlockByHeight height)
+    case mb of
+      Right (Just blk) ->
+        if blockHash blk == hashStop
+          then pure (acc ++ [blk])
+          else go (height + 1) (acc ++ [blk]) (n + 1)
+      Right Nothing -> pure acc
+      _ -> pure acc
+
 handleVerAck :: NodeContext -> NodeId -> Process ()
 handleVerAck context@NodeContext{nState} nid = do
   say $ "Received verack from nid: " ++ show nid
@@ -133,9 +195,24 @@ handleVerAck context@NodeContext{nState} nid = do
     onPeerReady context updatedPeer
 
 onPeerReady :: NodeContext -> Peer -> Process ()
-onPeerReady _context peer =
-  when (isReady peer) $
-    sendGetAddr peer
+onPeerReady context peer = when (isReady peer) $ do
+  sendGetAddr peer
+  syncChain context peer
+
+syncChain :: NodeContext -> Peer -> Process ()
+syncChain context peer = do
+  forM_ (pBestHeight peer) $ \bestHeightPeer -> do
+    bestBlockResult <- liftIO $ runChainM (nConfig context) (nDatabase context) getBestBlock
+    case bestBlockResult of
+      Left err -> say $ "Error getting best block height: " ++ show err
+      Right (Just bestHeight)
+        | (bestHeight ^. bHeader . bHeight) < bestHeightPeer -> do
+            say $ "Local chain is behind peer " ++ show (pNodeId peer) ++ ", syncing..."
+            locatorHashes <- liftIO $ makeLocator context (bestHeight ^. bHeader . bHeight)
+            let getHeaders = GetHeaders (nProtocolVersion context) locatorHashes (hash' BS.empty)
+            unicast (pNodeId peer) (MGetHeaders getHeaders)
+        | otherwise -> say $ "Local chain is up to date with peer " ++ show (pNodeId peer)
+      Right Nothing -> say "No best block found in local chain, cannot sync"
 
 handleAddr :: NodeContext -> Addr -> Process ()
 handleAddr NodeContext{nState} (Addr addrs) = do
